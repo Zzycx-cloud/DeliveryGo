@@ -191,6 +191,7 @@
     <button class="admin-tab-btn" data-atab="restaurants">Restoranlar</button>
     <button class="admin-tab-btn" data-atab="users">Foydalanuvchilar</button>
     <button class="admin-tab-btn admin-super-only hidden" data-atab="admins">Adminlar</button>
+    <button class="admin-tab-btn admin-super-only hidden" data-atab="broadcast">Xabar yuborish</button>
     <button class="admin-tab-btn admin-super-only hidden" data-atab="settings">Sozlamalar</button>
   </div>
 
@@ -214,6 +215,18 @@
   <div class="admin-tab-content hidden" id="atab-admins">
     <button class="btn-small" id="addAdminBtn">+ Admin qo‘shish</button>
     <div id="adminAdminsList"></div>
+  </div>
+
+  <div class="admin-tab-content hidden" id="atab-broadcast">
+    <p class="muted" style="margin-bottom:10px;">Barcha foydalanuvchilarga bir vaqtda xabar yuborish (email + Telegram bot + kanal)</p>
+    <textarea id="broadcastText" rows="6" placeholder="Xabar matnini kiriting..." style="width:100%;padding:12px;border-radius:12px;background:#1a1b1e;color:#fff;border:1px solid #333;resize:vertical;"></textarea>
+    <div style="display:flex;gap:14px;margin:12px 0;flex-wrap:wrap;">
+      <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="bcEmail" checked> Email</label>
+      <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="bcTelegram" checked> Telegram bot foydalanuvchilari</label>
+      <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="bcChannel"> Kanalga e'lon</label>
+    </div>
+    <button class="btn-primary" id="sendBroadcastBtn">Yuborish</button>
+    <div id="broadcastResult" style="margin-top:10px;"></div>
   </div>
 
   <div class="admin-tab-content hidden" id="atab-settings">

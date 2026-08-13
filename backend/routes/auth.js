@@ -1,39 +1,14 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
 const db = require('../db/db');
 const { logRegistration } = require('../telegram');
+const { isRealSmtpConfigured, sendMailWithTimeout } = require('../utils/mailer');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret';
 
 function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
-}
-
-let transporter = null;
-function getTransporter() {
-  if (transporter) return transporter;
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
-  transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 465),
-    secure: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    // Render ba'zan chiquvchi SMTP ulanishlarni sekinlashtiradi/bloklaydi —
-    // shu sabab qisqa timeout qo'yamiz, aks holda so'rov cheksiz "osilib" qoladi
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 8000,
-  });
-  return transporter;
-}
-
-function sendMailWithTimeout(mailer, options, ms = 9000) {
-  return Promise.race([
-    mailer.sendMail(options),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP timeout')), ms)),
-  ]);
 }
 
 // 1) Kod so'rash
@@ -48,8 +23,6 @@ router.post('/request-code', async (req, res) => {
 
   db.prepare('INSERT INTO otp_codes (email, code, expires_at) VALUES (?, ?, ?)').run(email, code, expiresAt);
 
-  const isRealSmtp = process.env.SMTP_USER && !process.env.SMTP_USER.includes('your_email');
-
   // Frontend'ga DARHOL javob qaytaramiz (SMTP javobini kutmaymiz) —
   // shu sabab "Kodni kiriting" ekrani bir zumda ochiladi.
   // Hozircha sinov bosqichida bo'lgani uchun kodni javobda ham ko'rsatamiz —
@@ -57,20 +30,16 @@ router.post('/request-code', async (req, res) => {
   // Productionga chiqqanda bu qatorni olib tashlang (xavfsizlik uchun).
   res.json({ ok: true, message: 'Kod emailga yuborildi', dev_code: code });
 
-  if (isRealSmtp) {
-    const mailer = getTransporter();
-    if (mailer) {
-      try {
-        await sendMailWithTimeout(mailer, {
-          from: `"DeliGo" <${process.env.SMTP_USER}>`,
-          to: email,
-          subject: 'DeliGo - Tasdiqlash kodi',
-          text: `Sizning DeliGo tasdiqlash kodingiz: ${code} (5 daqiqa amal qiladi)`,
-        });
-      } catch (err) {
-        console.error(`Email yuborishda xato (${email}):`, err.message);
-        console.log(`[DEV FALLBACK] ${email} uchun kod: ${code}`);
-      }
+  if (isRealSmtpConfigured()) {
+    try {
+      await sendMailWithTimeout({
+        to: email,
+        subject: 'DeliGo - Tasdiqlash kodi',
+        text: `Sizning DeliGo tasdiqlash kodingiz: ${code} (5 daqiqa amal qiladi)`,
+      });
+    } catch (err) {
+      console.error(`Email yuborishda xato (${email}):`, err.message);
+      console.log(`[DEV FALLBACK] ${email} uchun kod: ${code}`);
     }
   } else {
     console.log(`[DEV] ${email} uchun kod: ${code}`);

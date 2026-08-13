@@ -1,7 +1,8 @@
 const express = require('express');
 const db = require('../db/db');
 const { auth, requireAdmin, requireSuperAdmin } = require('../middleware');
-const { logAdminAdded, logEvent } = require('../telegram');
+const { logAdminAdded, logEvent, sendTelegramMessage } = require('../telegram');
+const { isRealSmtpConfigured, sendMailWithTimeout } = require('../utils/mailer');
 
 const router = express.Router();
 
@@ -92,6 +93,54 @@ router.post('/settings', auth, requireSuperAdmin, (req, res) => {
     upsert.run(key, String(value));
   }
   res.json({ ok: true });
+});
+
+// Ommaviy xabar (broadcast) — email, telegram bot foydalanuvchilari, kanal
+router.post('/broadcast', auth, requireSuperAdmin, async (req, res) => {
+  const { text, channels } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: 'Xabar matni kerak' });
+
+  const wantEmail = !channels || channels.includes('email');
+  const wantTelegram = !channels || channels.includes('telegram');
+  const wantChannel = channels && channels.includes('channel');
+
+  // Darhol javob qaytaramiz, yuborishni fonda davom ettiramiz (ko'p foydalanuvchi bo'lsa uzoq davom etishi mumkin)
+  res.json({ ok: true, message: 'Xabar yuborish boshlandi' });
+
+  let emailCount = 0;
+  let telegramCount = 0;
+
+  if (wantEmail && isRealSmtpConfigured()) {
+    const users = db.prepare("SELECT email FROM users WHERE email NOT LIKE 'tg%@deligo.bot'").all();
+    for (const u of users) {
+      try {
+        await sendMailWithTimeout({ to: u.email, subject: 'DeliGo - Xabar', text });
+        emailCount++;
+      } catch (err) {
+        console.error(`Broadcast email xato (${u.email}):`, err.message);
+      }
+    }
+  }
+
+  if (wantTelegram) {
+    // Bot orqali ro'yxatdan o'tgan foydalanuvchilar email'i tg<telegram_id>@deligo.bot ko'rinishida saqlanadi
+    const tgUsers = db.prepare("SELECT email FROM users WHERE email LIKE 'tg%@deligo.bot'").all();
+    for (const u of tgUsers) {
+      const telegramId = u.email.replace('tg', '').replace('@deligo.bot', '');
+      try {
+        await sendTelegramMessage(telegramId, text);
+        telegramCount++;
+      } catch (err) {
+        console.error(`Broadcast telegram xato (${telegramId}):`, err.message);
+      }
+    }
+  }
+
+  if (wantChannel) {
+    await logEvent(`📢 <b>E'lon</b>\n${text}`);
+  }
+
+  logEvent(`📤 Broadcast yuborildi — Kim: ${req.user.email}\nEmail: ${emailCount} ta, Telegram: ${telegramCount} ta`);
 });
 
 module.exports = router;

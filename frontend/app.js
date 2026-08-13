@@ -144,6 +144,7 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('addRestaurantBtn').addEventListener('click', openAddRestaurantModal);
   document.getElementById('addAdminBtn').addEventListener('click', openAddAdminModal);
   document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+  document.getElementById('sendBroadcastBtn').addEventListener('click', sendBroadcast);
 
   document.getElementById('modalOverlay').addEventListener('click', (e) => {
     if (e.target.id === 'modalOverlay') closeModal();
@@ -513,6 +514,33 @@ async function saveSettings() {
   };
   await api('/api/admin/settings', { method: 'POST', body: JSON.stringify(body) });
   alert('Saqlandi');
+}
+
+async function sendBroadcast() {
+  const text = document.getElementById('broadcastText').value.trim();
+  const resultEl = document.getElementById('broadcastResult');
+  resultEl.textContent = '';
+  if (!text) { resultEl.textContent = 'Xabar matnini kiriting'; return; }
+
+  const channels = [];
+  if (document.getElementById('bcEmail').checked) channels.push('email');
+  if (document.getElementById('bcTelegram').checked) channels.push('telegram');
+  if (document.getElementById('bcChannel').checked) channels.push('channel');
+  if (!channels.length) { resultEl.textContent = 'Kamida bitta kanal tanlang'; return; }
+
+  const btn = document.getElementById('sendBroadcastBtn');
+  btn.disabled = true;
+  btn.textContent = 'Yuborilmoqda...';
+  try {
+    await api('/api/admin/broadcast', { method: 'POST', body: JSON.stringify({ text, channels }) });
+    resultEl.textContent = '✅ Xabar yuborish boshlandi (fonda davom etadi)';
+    document.getElementById('broadcastText').value = '';
+  } catch (err) {
+    resultEl.textContent = '❌ ' + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Yuborish';
+  }
 }
 
 // ===================== MODALS =====================
