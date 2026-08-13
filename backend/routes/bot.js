@@ -5,6 +5,7 @@ const {
   notifyCourierChannel, sendTelegramMessage, editTelegramMessage,
 } = require('../telegram');
 const { isRealSmtpConfigured, sendMailWithTimeout } = require('../utils/mailer');
+const { FOUNDERS } = require('../config/founders');
 
 const router = express.Router();
 
@@ -52,24 +53,22 @@ router.post('/register', (req, res) => {
   // Owner/adminni telegram_id orqali topamiz (eng ishonchli usul), topilmasa email orqali
   let admin = findAdminByTelegramId(telegram_id);
 
-  // Agar bu founder (SUPER_ADMIN_TELEGRAM_ID) bo'lsa, lekin hali admins jadvalida shu telegram_id
-  // yozilmagan bo'lsa (masalan birinchi marta botga /start bosayotgan bo'lsa) — bog'lab qo'yamiz
-  const founderTelegramId = (process.env.SUPER_ADMIN_TELEGRAM_ID || '').replace(/\D/g, '');
-  if (!admin && founderTelegramId && String(telegram_id) === founderTelegramId) {
-    const founderRow = db.prepare('SELECT * FROM admins WHERE is_founder = 1').get();
-    if (founderRow) {
-      db.prepare('UPDATE admins SET telegram_id = ? WHERE id = ?').run(String(telegram_id), founderRow.id);
-      admin = db.prepare('SELECT * FROM admins WHERE id = ?').get(founderRow.id);
+  // Agar bu bitta asoschi (FOUNDERS ichidan) bo'lsa, lekin hali admins jadvalida shu telegram_id
+  // yozilmagan bo'lsa (masalan birinchi marta botga /start bosayotgan bo'lsa) — o'ziga tegishli
+  // asoschi qatoriga bog'lab qo'yamiz (email bo'yicha aniq topib, boshqa asoschini xato bog'lab
+  // qo'ymaslik uchun).
+  if (!admin) {
+    const matchedFounder = FOUNDERS.find((f) => f.telegramId && String(telegram_id) === f.telegramId);
+    if (matchedFounder) {
+      const founderRow = db.prepare('SELECT * FROM admins WHERE email = ? AND is_founder = 1').get(matchedFounder.email);
+      if (founderRow) {
+        db.prepare('UPDATE admins SET telegram_id = ? WHERE id = ?').run(String(telegram_id), founderRow.id);
+        admin = db.prepare('SELECT * FROM admins WHERE id = ?').get(founderRow.id);
+      }
     }
   }
-  // Bog'langan bo'lsa endi shu foydalanuvchi emailiga ham admin huquqini biriktiramiz
-  if (admin && admin.email !== email && !admin.email.startsWith('tg')) {
-    // asosiy owner email (masalan gmail) bilan emas, bot ichidagi tg-email bilan ham ishlashi uchun
-    // faqat telegram_id orqali tekshiruv yetarli — email ustunini o'zgartirmaymiz, aynan shu joyda ruxsat beramiz
-  }
 
-  const superAdminPhone = (process.env.SUPER_ADMIN_PHONE || '').replace(/\D/g, '');
-  const isSuperAdminByPhone = phone && superAdminPhone && phone.replace(/\D/g, '').endsWith(superAdminPhone.slice(-9));
+  const isSuperAdminByPhone = !!(phone && FOUNDERS.some((f) => f.phone && phone.replace(/\D/g, '').endsWith(f.phone.replace(/\D/g, '').slice(-9))));
 
   res.json({
     ok: true,
@@ -184,27 +183,58 @@ router.post('/remove-admin', (req, res) => {
   res.json({ ok: true });
 });
 
-// Adminlar ro'yxati (bot uchun)
+// Adminlar ro'yxati (bot uchun) — faqat owner/katta admin ko'ra oladi
 router.get('/admins', (req, res) => {
+  const byAdmin = findAdminByTelegramId(req.query.by_telegram_id);
+  if (!byAdmin || !['owner', 'senior_admin'].includes(byAdmin.role)) {
+    return res.status(403).json({ error: 'Faqat owner yoki katta admin adminlar ro\'yxatini ko\'ra oladi' });
+  }
   res.json(db.prepare('SELECT * FROM admins ORDER BY id DESC').all());
 });
 
-// Admin log (bot uchun, oxirgi 30 ta)
+// Admin log (bot uchun, oxirgi 30 ta) — faqat owner/katta admin ko'ra oladi
 router.get('/admin-logs', (req, res) => {
+  const byAdmin = findAdminByTelegramId(req.query.by_telegram_id);
+  if (!byAdmin || !['owner', 'senior_admin'].includes(byAdmin.role)) {
+    return res.status(403).json({ error: 'Faqat owner yoki katta admin admin logni ko\'ra oladi' });
+  }
   res.json(db.prepare('SELECT * FROM admin_logs ORDER BY id DESC LIMIT 30').all());
 });
 
-// Statistika (bot uchun qisqa)
+// Statistika (bot uchun qisqa) — restoran admini FAQAT o'z restoranining statistikasini ko'radi
 router.get('/stats', (req, res) => {
+  const byAdmin = findAdminByTelegramId(req.query.by_telegram_id);
+  if (!byAdmin) return res.status(403).json({ error: 'Admin huquqi yo\'q' });
+
+  if (byAdmin.role === 'restaurant_admin') {
+    const restaurant = db.prepare('SELECT * FROM restaurants WHERE id = ?').get(byAdmin.restaurant_id);
+    const ordersCount = db.prepare('SELECT COUNT(*) c FROM orders WHERE restaurant_id = ?').get(byAdmin.restaurant_id).c;
+    const revenue = db.prepare(
+      "SELECT COALESCE(SUM(total_amount),0) s FROM orders WHERE restaurant_id = ? AND status = 'delivered'"
+    ).get(byAdmin.restaurant_id).s;
+    return res.json({ scope: 'restaurant', restaurantName: restaurant ? restaurant.name : null, ordersCount, revenue });
+  }
+
   const usersCount = db.prepare('SELECT COUNT(*) c FROM users').get().c;
   const restaurantsCount = db.prepare('SELECT COUNT(*) c FROM restaurants').get().c;
   const ordersCount = db.prepare('SELECT COUNT(*) c FROM orders').get().c;
   const revenue = db.prepare("SELECT COALESCE(SUM(total_amount),0) s FROM orders WHERE status = 'delivered'").get().s;
-  res.json({ usersCount, restaurantsCount, ordersCount, revenue });
+  res.json({ scope: 'global', usersCount, restaurantsCount, ordersCount, revenue });
 });
 
-// Keng statistika (bot uchun)
+// Keng statistika (bot uchun) — restoran admini uchun faqat o'z restoranining kunlik statistikasi
 router.get('/wide-stats', (req, res) => {
+  const byAdmin = findAdminByTelegramId(req.query.by_telegram_id);
+  if (!byAdmin) return res.status(403).json({ error: 'Admin huquqi yo\'q' });
+
+  if (byAdmin.role === 'restaurant_admin') {
+    const byDay = db.prepare(`
+      SELECT substr(created_at, 1, 10) day, COUNT(*) orders, COALESCE(SUM(total_amount),0) revenue
+      FROM orders WHERE restaurant_id = ? GROUP BY day ORDER BY day DESC LIMIT 7
+    `).all(byAdmin.restaurant_id);
+    return res.json({ scope: 'restaurant', byDay, topRestaurants: [] });
+  }
+
   const byDay = db.prepare(`
     SELECT substr(created_at, 1, 10) day, COUNT(*) orders, COALESCE(SUM(total_amount),0) revenue
     FROM orders GROUP BY day ORDER BY day DESC LIMIT 7
@@ -214,7 +244,7 @@ router.get('/wide-stats', (req, res) => {
     FROM restaurants r LEFT JOIN orders o ON o.restaurant_id = r.id
     GROUP BY r.id ORDER BY revenue DESC LIMIT 5
   `).all();
-  res.json({ byDay, topRestaurants });
+  res.json({ scope: 'global', byDay, topRestaurants });
 });
 
 // Restoran/oshxona qo'shish (bot orqali, admin bo'lishi kerak)

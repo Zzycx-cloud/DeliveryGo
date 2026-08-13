@@ -99,6 +99,23 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('backFromRestaurant').addEventListener('click', () => showScreen('screen-main'));
   document.getElementById('cartFab').addEventListener('click', openCheckout);
 
+  // TOP CART ICON — savatda mahsulot bo'lsa checkoutga o'tadi, bo'lmasa ogohlantiradi
+  document.getElementById('cartBtn').addEventListener('click', () => {
+    const hasItems = Object.keys(state.cart).length > 0;
+    if (!hasItems) {
+      showModal(`
+        <h3>🛒 Savat bo'sh</h3>
+        <p class="muted">Buyurtma berish uchun avval biror restoran yoki oshxonadan taom tanlang.</p>
+        <button class="btn-primary" id="cartEmptyOkBtn">Tushunarli</button>
+      `);
+      document.getElementById('cartEmptyOkBtn').onclick = closeModal;
+      return;
+    }
+    if (!state.currentRestaurant) { showScreen('screen-main'); return; }
+    showScreen('screen-restaurant');
+    openCheckout();
+  });
+
   // CHECKOUT
   document.getElementById('backFromCheckout').addEventListener('click', () => showScreen('screen-restaurant'));
   document.getElementById('placeOrderBtn').addEventListener('click', placeOrder);
@@ -323,6 +340,8 @@ function openCheckout() {
     list.appendChild(row);
   });
   document.getElementById('checkoutTotal').textContent = total.toLocaleString() + " so'm";
+  // To'lov usuli tugmalarini state.paymentMethod bilan sinxronlaymiz (avvalgi tanlov saqlanib qolsin)
+  document.querySelectorAll('.pay-opt').forEach((b) => b.classList.toggle('active', b.dataset.pay === state.paymentMethod));
   showScreen('screen-checkout');
 }
 
@@ -387,11 +406,19 @@ function switchAdminTab(tab) {
 
 async function loadAdminStats() {
   const s = await api('/api/admin/stats');
-  document.getElementById('statGrid').innerHTML = `
-    <div class="stat-card"><div class="stat-num">${s.usersCount}</div><div class="stat-label">Foydalanuvchilar</div></div>
-    <div class="stat-card"><div class="stat-num">${s.restaurantsCount}</div><div class="stat-label">Restoranlar</div></div>
-    <div class="stat-card"><div class="stat-num">${s.ordersCount}</div><div class="stat-label">Buyurtmalar</div></div>
-    <div class="stat-card"><div class="stat-num">${s.revenue.toLocaleString()}</div><div class="stat-label">Aylanma (so'm)</div></div>`;
+  if (s.scope === 'restaurant') {
+    // Restoran admini — faqat o'z restoranining statistikasi
+    document.getElementById('statGrid').innerHTML = `
+      <div class="stat-card" style="grid-column:1/-1"><div class="stat-label">${escapeHtml(s.restaurantName || 'Sizning restoraningiz')}</div></div>
+      <div class="stat-card"><div class="stat-num">${s.ordersCount}</div><div class="stat-label">Buyurtmalar</div></div>
+      <div class="stat-card"><div class="stat-num">${s.revenue.toLocaleString()}</div><div class="stat-label">Aylanma (so'm)</div></div>`;
+  } else {
+    document.getElementById('statGrid').innerHTML = `
+      <div class="stat-card"><div class="stat-num">${s.usersCount}</div><div class="stat-label">Foydalanuvchilar</div></div>
+      <div class="stat-card"><div class="stat-num">${s.restaurantsCount}</div><div class="stat-label">Restoranlar</div></div>
+      <div class="stat-card"><div class="stat-num">${s.ordersCount}</div><div class="stat-label">Buyurtmalar</div></div>
+      <div class="stat-card"><div class="stat-num">${s.revenue.toLocaleString()}</div><div class="stat-label">Aylanma (so'm)</div></div>`;
+  }
   const isSuper = ['owner','senior_admin'].includes(state.adminRole);
   document.querySelectorAll('.admin-super-only').forEach((el) => el.classList.toggle('hidden', !isSuper));
 }

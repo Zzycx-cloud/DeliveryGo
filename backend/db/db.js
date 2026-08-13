@@ -136,22 +136,25 @@ const defaults = {
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
 for (const [k, v] of Object.entries(defaults)) insertSetting.run(k, v);
 
-// Bosh owner (founder) .env dan doim mavjud bo'lishi kerak — email orqali ham,
-// Telegram ID orqali ham kirganida owner huquqi berilishi uchun ikkalasi ham saqlanadi.
-const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'ibragimovfkhan@gmail.com';
-const superAdminTelegramId = process.env.SUPER_ADMIN_TELEGRAM_ID || '';
+// Bosh owner'lar (asoschilar) — ikkalasi ham .env yoki backend/config/founders.js dan doim
+// mavjud bo'lishi kerak — email orqali ham, Telegram ID orqali ham kirganida owner huquqi
+// berilishi uchun ikkalasi ham saqlanadi. Ikkala asoschi ham teng huquqli owner va himoyalangan
+// (is_founder=1) — bir-birini ham hech kim o'chira olmaydi.
+const { FOUNDERS } = require('../config/founders');
 
-const existingFounder = db.prepare('SELECT * FROM admins WHERE email = ?').get(superAdminEmail);
-if (!existingFounder) {
-  db.prepare(
-    'INSERT INTO admins (email, telegram_id, role, is_founder, added_by) VALUES (?, ?, ?, 1, ?)'
-  ).run(superAdminEmail, superAdminTelegramId || null, 'owner', 'system');
-} else {
-  // Har ehtimolga qarshi: .env dagi founder har doim owner + himoyalangan bo'lib qolsin,
-  // va agar telegram_id .env da yangilangan bo'lsa shu yerga ham yozib qo'yamiz.
-  db.prepare(
-    "UPDATE admins SET role = 'owner', is_founder = 1, telegram_id = COALESCE(NULLIF(?, ''), telegram_id) WHERE email = ?"
-  ).run(superAdminTelegramId, superAdminEmail);
+for (const founder of FOUNDERS) {
+  const existingFounder = db.prepare('SELECT * FROM admins WHERE email = ?').get(founder.email);
+  if (!existingFounder) {
+    db.prepare(
+      'INSERT INTO admins (email, telegram_id, role, is_founder, added_by) VALUES (?, ?, ?, 1, ?)'
+    ).run(founder.email, founder.telegramId || null, 'owner', 'system');
+  } else {
+    // Har ehtimolga qarshi: har bir asoschi har doim owner + himoyalangan bo'lib qolsin,
+    // va agar telegram_id .env/config da yangilangan bo'lsa shu yerga ham yozib qo'yamiz.
+    db.prepare(
+      "UPDATE admins SET role = 'owner', is_founder = 1, telegram_id = COALESCE(NULLIF(?, ''), telegram_id) WHERE email = ?"
+    ).run(founder.telegramId || '', founder.email);
+  }
 }
 
 module.exports = db;

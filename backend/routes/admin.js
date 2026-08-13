@@ -10,17 +10,38 @@ function writeAdminLog(actor, action, details) {
   db.prepare('INSERT INTO admin_logs (actor, action, details) VALUES (?, ?, ?)').run(actor, action, details || '');
 }
 
-// Statistika (dashboard uchun)
+// Statistika (dashboard uchun) — restoran admini FAQAT o'z restoranining statistikasini ko'radi
 router.get('/stats', auth, requireAdmin, (req, res) => {
+  if (req.admin.role === 'restaurant_admin') {
+    const restaurant = db.prepare('SELECT * FROM restaurants WHERE id = ?').get(req.admin.restaurant_id);
+    const ordersCount = db.prepare('SELECT COUNT(*) c FROM orders WHERE restaurant_id = ?').get(req.admin.restaurant_id).c;
+    const revenue = db.prepare(
+      "SELECT COALESCE(SUM(total_amount),0) s FROM orders WHERE restaurant_id = ? AND status = 'delivered'"
+    ).get(req.admin.restaurant_id).s;
+    return res.json({
+      scope: 'restaurant',
+      restaurantName: restaurant ? restaurant.name : null,
+      ordersCount,
+      revenue,
+    });
+  }
   const usersCount = db.prepare('SELECT COUNT(*) c FROM users').get().c;
   const restaurantsCount = db.prepare('SELECT COUNT(*) c FROM restaurants').get().c;
   const ordersCount = db.prepare('SELECT COUNT(*) c FROM orders').get().c;
   const revenue = db.prepare("SELECT COALESCE(SUM(total_amount),0) s FROM orders WHERE status = 'delivered'").get().s;
-  res.json({ usersCount, restaurantsCount, ordersCount, revenue });
+  res.json({ scope: 'global', usersCount, restaurantsCount, ordersCount, revenue });
 });
 
 // Keng statistika (kunlar bo'yicha + top restoranlar) — web panel uchun ham
+// restoran admini uchun faqat o'z restoranining kunlik statistikasi qaytadi, boshqa restoranlar ko'rinmaydi
 router.get('/wide-stats', auth, requireAdmin, (req, res) => {
+  if (req.admin.role === 'restaurant_admin') {
+    const byDay = db.prepare(`
+      SELECT substr(created_at, 1, 10) day, COUNT(*) orders, COALESCE(SUM(total_amount),0) revenue
+      FROM orders WHERE restaurant_id = ? GROUP BY day ORDER BY day DESC LIMIT 7
+    `).all(req.admin.restaurant_id);
+    return res.json({ scope: 'restaurant', byDay, topRestaurants: [] });
+  }
   const byDay = db.prepare(`
     SELECT substr(created_at, 1, 10) day, COUNT(*) orders, COALESCE(SUM(total_amount),0) revenue
     FROM orders GROUP BY day ORDER BY day DESC LIMIT 7
@@ -30,7 +51,7 @@ router.get('/wide-stats', auth, requireAdmin, (req, res) => {
     FROM restaurants r LEFT JOIN orders o ON o.restaurant_id = r.id
     GROUP BY r.id ORDER BY revenue DESC LIMIT 5
   `).all();
-  res.json({ byDay, topRestaurants });
+  res.json({ scope: 'global', byDay, topRestaurants });
 });
 
 // Admin log (web panel uchun)

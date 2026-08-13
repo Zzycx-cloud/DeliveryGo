@@ -629,25 +629,37 @@ async def broadcast_got_text(message: Message, state: FSMContext):
 # ---------- Statistika / Admin log / Keng statistika ----------
 @router.callback_query(F.data == "astat")
 async def show_stats(callback: CallbackQuery):
-    data, status = await api_get("/api/bot/stats")
+    uid = callback.from_user.id
+    data, status = await api_get(f"/api/bot/stats?by_telegram_id={uid}")
     if status != 200:
-        await callback.answer("Xatolik", show_alert=True)
+        await callback.answer(data.get("error", "Xatolik"), show_alert=True)
         return
-    text = (
-        f"📊 Statistika\n\n"
-        f"👤 Foydalanuvchilar: {data['usersCount']}\n"
-        f"🍽 Restoran/oshxonalar: {data['restaurantsCount']}\n"
-        f"📦 Buyurtmalar: {data['ordersCount']}\n"
-        f"💰 Tushum (yetkazilgan): {data['revenue']:,} so'm"
-    )
+    if data.get("scope") == "restaurant":
+        text = (
+            f"📊 Statistika — {data.get('restaurantName') or 'Sizning restoraningiz'}\n\n"
+            f"📦 Buyurtmalar: {data['ordersCount']}\n"
+            f"💰 Tushum (yetkazilgan): {data['revenue']:,} so'm"
+        )
+    else:
+        text = (
+            f"📊 Statistika\n\n"
+            f"👤 Foydalanuvchilar: {data['usersCount']}\n"
+            f"🍽 Restoran/oshxonalar: {data['restaurantsCount']}\n"
+            f"📦 Buyurtmalar: {data['ordersCount']}\n"
+            f"💰 Tushum (yetkazilgan): {data['revenue']:,} so'm"
+        )
     await callback.message.answer(text)
     await callback.answer()
 
 
 @router.callback_query(F.data == "alog")
 async def show_admin_log(callback: CallbackQuery):
-    data, status = await api_get("/api/bot/admin-logs")
-    if status != 200 or not data:
+    uid = callback.from_user.id
+    data, status = await api_get(f"/api/bot/admin-logs?by_telegram_id={uid}")
+    if status != 200:
+        await callback.answer(data.get("error", "Xatolik"), show_alert=True)
+        return
+    if not data:
         await callback.message.answer("Admin log bo'sh.")
         await callback.answer()
         return
@@ -658,13 +670,17 @@ async def show_admin_log(callback: CallbackQuery):
 
 @router.callback_query(F.data == "awide")
 async def show_wide_stats(callback: CallbackQuery):
-    data, status = await api_get("/api/bot/wide-stats")
+    uid = callback.from_user.id
+    data, status = await api_get(f"/api/bot/wide-stats?by_telegram_id={uid}")
     if status != 200:
-        await callback.answer("Xatolik", show_alert=True)
+        await callback.answer(data.get("error", "Xatolik"), show_alert=True)
         return
     by_day = "\n".join(f"{d['day']}: {d['orders']} ta buyurtma, {d['revenue']:,} so'm" for d in data["byDay"]) or "-"
-    top = "\n".join(f"{r['name']}: {r['orders']} ta, {r['revenue']:,} so'm" for r in data["topRestaurants"]) or "-"
-    await callback.message.answer(f"📈 Kunlar bo'yicha (oxirgi 7 kun):\n{by_day}\n\n🏆 TOP restoranlar:\n{top}")
+    if data.get("scope") == "restaurant":
+        await callback.message.answer(f"📈 Kunlar bo'yicha (oxirgi 7 kun, o'z restoraningiz):\n{by_day}")
+    else:
+        top = "\n".join(f"{r['name']}: {r['orders']} ta, {r['revenue']:,} so'm" for r in data["topRestaurants"]) or "-"
+        await callback.message.answer(f"📈 Kunlar bo'yicha (oxirgi 7 kun):\n{by_day}\n\n🏆 TOP restoranlar:\n{top}")
     await callback.answer()
 
 
@@ -735,8 +751,11 @@ async def finalize_add_admin(message: Message, state: FSMContext, uid: int, rest
 # ---------- Adminlar ro'yxati / Admin olib tashlash ----------
 @router.callback_query(F.data == "admin_list")
 async def admin_list(callback: CallbackQuery):
-    data, status = await api_get("/api/bot/admins")
-    if status != 200 or not data:
+    data, status = await api_get(f"/api/bot/admins?by_telegram_id={callback.from_user.id}")
+    if status != 200:
+        await callback.answer(data.get("error", "Xatolik"), show_alert=True)
+        return
+    if not data:
         await callback.message.answer("Hali adminlar yo'q.")
         await callback.answer()
         return
@@ -751,8 +770,11 @@ async def admin_list(callback: CallbackQuery):
 
 @router.callback_query(F.data == "admin_remove_list")
 async def admin_remove_list(callback: CallbackQuery):
-    data, status = await api_get("/api/bot/admins")
-    if status != 200 or not data:
+    data, status = await api_get(f"/api/bot/admins?by_telegram_id={callback.from_user.id}")
+    if status != 200:
+        await callback.answer(data.get("error", "Xatolik"), show_alert=True)
+        return
+    if not data:
         await callback.message.answer("Hali adminlar yo'q.")
         await callback.answer()
         return
