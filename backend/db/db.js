@@ -102,6 +102,16 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS couriers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  telegram_id TEXT UNIQUE NOT NULL,
+  name TEXT,
+  phone TEXT,
+  is_active INTEGER DEFAULT 1,
+  added_by TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 `);
 
 // Eski (oldin yaratilgan) baza fayllarida yangi ustunlar bo'lmasligi mumkin — xavfsiz migratsiya
@@ -113,6 +123,9 @@ function ensureColumn(table, column, definition) {
 }
 ensureColumn('admins', 'telegram_id', 'TEXT');
 ensureColumn('admins', 'is_founder', 'INTEGER DEFAULT 0');
+ensureColumn('orders', 'courier_id', 'INTEGER');
+ensureColumn('orders', 'courier_telegram_id', 'TEXT');
+ensureColumn('orders', 'courier_name', 'TEXT');
 
 // Default settings
 const defaults = {

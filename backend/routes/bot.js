@@ -1,6 +1,10 @@
 const express = require('express');
 const db = require('../db/db');
-const { logOrder, logRegistration, logAdminAdded, logEvent, logItemAdded } = require('../telegram');
+const {
+  logOrder, logRegistration, logAdminAdded, logEvent, logItemAdded,
+  notifyCourierChannel, sendTelegramMessage, editTelegramMessage,
+} = require('../telegram');
+const { isRealSmtpConfigured, sendMailWithTimeout } = require('../utils/mailer');
 
 const router = express.Router();
 
@@ -115,6 +119,8 @@ router.post('/order', (req, res) => {
 
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(info.lastInsertRowid);
   logOrder(order, restaurant, user);
+  const activeCouriers = db.prepare('SELECT * FROM couriers WHERE is_active = 1').all();
+  notifyCourierChannel(order, restaurant, user, activeCouriers);
   res.json({ ok: true, order });
 });
 
@@ -243,6 +249,139 @@ router.post('/restaurants/:id/menu', (req, res) => {
     .run(restaurant.id, name, description || '', price, image_url || '');
   logItemAdded(byAdmin.email, name, restaurant.name);
   res.json({ ok: true, id: info.lastInsertRowid });
+});
+
+// ===================== DOSTAVCHIKLAR (kuryerlar) =====================
+// Dostavchik qo'shish — faqat owner/katta admin
+router.post('/add-courier', (req, res) => {
+  const { by_telegram_id, telegram_id, name, phone } = req.body;
+  const byAdmin = findAdminByTelegramId(by_telegram_id);
+  if (!byAdmin || !['owner', 'senior_admin'].includes(byAdmin.role)) {
+    return res.status(403).json({ error: 'Faqat owner yoki katta admin dostavchik qo\'sha oladi' });
+  }
+  if (!telegram_id) return res.status(400).json({ error: 'Dostavchi Telegram ID kerak' });
+  db.prepare(
+    'INSERT INTO couriers (telegram_id, name, phone, added_by) VALUES (?, ?, ?, ?) ' +
+    'ON CONFLICT(telegram_id) DO UPDATE SET name = excluded.name, phone = excluded.phone, is_active = 1'
+  ).run(String(telegram_id), name || '', phone || '', byAdmin.email);
+  writeAdminLog(byAdmin.email, 'dostavchik_qoshildi', `${name || ''} (tg:${telegram_id})`);
+  logEvent(`🚴 <b>Yangi dostavchik qo'shildi</b>\nIsm: ${name || '-'}\nKim qo'shdi: ${byAdmin.email}`);
+  res.json({ ok: true });
+});
+
+// Dostavchikni olib tashlash / faolsizlantirish
+router.post('/remove-courier', (req, res) => {
+  const { by_telegram_id, courier_id } = req.body;
+  const byAdmin = findAdminByTelegramId(by_telegram_id);
+  if (!byAdmin || !['owner', 'senior_admin'].includes(byAdmin.role)) {
+    return res.status(403).json({ error: 'Faqat owner yoki katta admin dostavchikni olib tashlay oladi' });
+  }
+  db.prepare('UPDATE couriers SET is_active = 0 WHERE id = ?').run(courier_id);
+  writeAdminLog(byAdmin.email, 'dostavchik_ochirildi', `ID:${courier_id}`);
+  res.json({ ok: true });
+});
+
+// Dostavchiklar ro'yxati
+router.get('/couriers', (req, res) => {
+  res.json(db.prepare('SELECT * FROM couriers ORDER BY id DESC').all());
+});
+
+// Buyurtmaga dostavchik tayinlash — dostavchiklar kanalidagi tugma orqali chaqiriladi.
+// Har qanday admin (owner/katta admin/oddiy admin) tayinlay oladi, chunki kanalda bir nechta admin bo'lishi mumkin.
+router.post('/assign-courier', (req, res) => {
+  const { by_telegram_id, order_id, courier_id } = req.body;
+  const byAdmin = findAdminByTelegramId(by_telegram_id);
+  if (!byAdmin) return res.status(403).json({ error: 'Admin huquqi yo\'q' });
+
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(order_id);
+  if (!order) return res.status(404).json({ error: 'Buyurtma topilmadi' });
+  const courier = db.prepare('SELECT * FROM couriers WHERE id = ?').get(courier_id);
+  if (!courier) return res.status(404).json({ error: 'Dostavchik topilmadi' });
+
+  db.prepare("UPDATE orders SET courier_id = ?, courier_telegram_id = ?, courier_name = ?, status = 'on_way' WHERE id = ?")
+    .run(courier.id, courier.telegram_id, courier.name || '', order.id);
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(order.user_id);
+  const restaurant = db.prepare('SELECT * FROM restaurants WHERE id = ?').get(order.restaurant_id);
+
+  sendTelegramMessage(
+    courier.telegram_id,
+    `🚴 <b>Sizga buyurtma tayinlandi #${order.id}</b>\n🍽 ${restaurant ? restaurant.name : '-'}\n📍 Manzil: ${order.address || '-'}\n💰 Summa: ${order.total_amount.toLocaleString()} so'm\n💳 To'lov: ${order.payment_method === 'card' ? 'Karta' : 'Naqd pul'}`
+  );
+  if (user && user.email && user.email.startsWith('tg')) {
+    const custTelegramId = user.email.replace('tg', '').replace('@deligo.bot', '');
+    sendTelegramMessage(custTelegramId, `🚴 Buyurtmangiz #${order.id} yo'lda! Dostavchi: ${courier.name || 'tayinlandi'}`);
+  }
+  writeAdminLog(byAdmin.email, 'dostavchik_tayinlandi', `Buyurtma #${order.id} — ${courier.name || courier.telegram_id}`);
+
+  res.json({ ok: true, order_id: order.id, courier_name: courier.name, chat_id: req.body.chat_id, message_id: req.body.message_id });
+});
+
+// ===================== BAN / BROADCAST (bot admin panel orqali) =====================
+router.post('/ban-user', (req, res) => {
+  const { by_telegram_id, target, reason } = req.body;
+  const byAdmin = findAdminByTelegramId(by_telegram_id);
+  if (!byAdmin) return res.status(403).json({ error: 'Admin huquqi yo\'q' });
+  const isNumeric = /^\d+$/.test(String(target || ''));
+  const user = isNumeric
+    ? db.prepare('SELECT * FROM users WHERE email = ? OR phone = ?').get(`tg${target}@deligo.bot`, target)
+    : db.prepare('SELECT * FROM users WHERE email = ?').get(target);
+  if (!user) return res.status(404).json({ error: 'Foydalanuvchi topilmadi (Telegram ID yoki email yuboring)' });
+  db.prepare('UPDATE users SET is_banned = 1, ban_reason = ? WHERE id = ?').run(reason || '', user.id);
+  writeAdminLog(byAdmin.email, 'ban', `${user.email} — ${reason || '-'}`);
+  logEvent(`🚫 Foydalanuvchi bloklandi — ${user.email} — Kim: ${byAdmin.email} — Sabab: ${reason || '-'}`);
+  res.json({ ok: true, email: user.email });
+});
+
+router.post('/unban-user', (req, res) => {
+  const { by_telegram_id, target } = req.body;
+  const byAdmin = findAdminByTelegramId(by_telegram_id);
+  if (!byAdmin) return res.status(403).json({ error: 'Admin huquqi yo\'q' });
+  const isNumeric = /^\d+$/.test(String(target || ''));
+  const user = isNumeric
+    ? db.prepare('SELECT * FROM users WHERE email = ? OR phone = ?').get(`tg${target}@deligo.bot`, target)
+    : db.prepare('SELECT * FROM users WHERE email = ?').get(target);
+  if (!user) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
+  db.prepare('UPDATE users SET is_banned = 0, ban_reason = NULL WHERE id = ?').run(user.id);
+  writeAdminLog(byAdmin.email, 'unban', user.email);
+  res.json({ ok: true, email: user.email });
+});
+
+// Ommaviy xabar — bot admin panelidan (owner/katta admin)
+router.post('/broadcast', async (req, res) => {
+  const { by_telegram_id, text } = req.body;
+  const byAdmin = findAdminByTelegramId(by_telegram_id);
+  if (!byAdmin || !['owner', 'senior_admin'].includes(byAdmin.role)) {
+    return res.status(403).json({ error: 'Faqat owner yoki katta admin xabar yubora oladi' });
+  }
+  if (!text || !text.trim()) return res.status(400).json({ error: 'Xabar matni kerak' });
+
+  res.json({ ok: true, message: 'Xabar yuborish boshlandi' });
+
+  let emailCount = 0;
+  let telegramCount = 0;
+
+  if (isRealSmtpConfigured()) {
+    const users = db.prepare("SELECT email FROM users WHERE email NOT LIKE 'tg%@deligo.bot'").all();
+    for (const u of users) {
+      try {
+        await sendMailWithTimeout({ to: u.email, subject: 'DeliGo - Xabar', text });
+        emailCount++;
+      } catch (err) {
+        console.error(`Broadcast email xato (${u.email}):`, err.message);
+      }
+    }
+  }
+  const tgUsers = db.prepare("SELECT email FROM users WHERE email LIKE 'tg%@deligo.bot'").all();
+  for (const u of tgUsers) {
+    const telegramId = u.email.replace('tg', '').replace('@deligo.bot', '');
+    await sendTelegramMessage(telegramId, text);
+    telegramCount++;
+  }
+  await logEvent(`📢 <b>E'lon</b>\n${text}`);
+
+  writeAdminLog(byAdmin.email, 'broadcast', `Email: ${emailCount}, Telegram: ${telegramCount}`);
+  logEvent(`📤 Broadcast (bot) yuborildi — Kim: ${byAdmin.email}\nEmail: ${emailCount} ta, Telegram: ${telegramCount} ta`);
 });
 
 module.exports = router;

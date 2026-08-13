@@ -104,12 +104,39 @@ class AddPlace(StatesGroup):
     waiting_phone = State()
 
 
+class AddMenuItem(StatesGroup):
+    waiting_restaurant = State()
+    waiting_name = State()
+    waiting_price = State()
+    waiting_photo = State()
+
+
+class AddCourier(StatesGroup):
+    waiting_telegram_id = State()
+    waiting_name = State()
+
+
+class BanUser(StatesGroup):
+    waiting_target = State()
+    waiting_reason = State()
+
+
+class UnbanUser(StatesGroup):
+    waiting_target = State()
+
+
+class Broadcast(StatesGroup):
+    waiting_text = State()
+
+
 # {telegram_id: "owner"/"senior_admin"/"admin"/"restaurant_admin"/None}
 user_admin_role = {}
 # {telegram_id: role kutilayotgan yangi admin uchun ("owner"/"senior_admin"/"admin"/"restaurant_admin")}
 pending_new_admin_role = {}
 # {telegram_id: "restaurant"/"oshxona" - AddPlace flow uchun}
 pending_place_type = {}
+# {telegram_id: yangi taom uchun {"restaurant_id", "name", "price"}}
+pending_menu_item = {}
 
 
 # ===================== START =====================
@@ -289,11 +316,21 @@ ROLE_LABELS = {
 
 
 def admin_root_kb(uid: int) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(text="🍽 Restoran qo'shish", callback_data="place_restaurant")],
-        [InlineKeyboardButton(text="🍲 Oshxona qo'shish", callback_data="place_oshxona")],
-        [InlineKeyboardButton(text="⚙️ Admin sozlamalari", callback_data="admin_settings")],
-    ]
+    role = user_admin_role.get(uid) or "admin"
+    is_senior_plus = role in ("owner", "senior_admin")
+    rows = [[InlineKeyboardButton(text="🍔 Taom qo'shish (rasm + narx)", callback_data="menuitem_start")]]
+    if role != "restaurant_admin":
+        rows = [
+            [InlineKeyboardButton(text="🍽 Restoran qo'shish", callback_data="place_restaurant")],
+            [InlineKeyboardButton(text="🍲 Oshxona qo'shish", callback_data="place_oshxona")],
+        ] + rows
+    if is_senior_plus:
+        rows.append([InlineKeyboardButton(text="🚴 Dostavchik qo'shish", callback_data="courier_add")])
+        rows.append([InlineKeyboardButton(text="🚴 Dostavchiklar ro'yxati", callback_data="courier_list")])
+        rows.append([InlineKeyboardButton(text="🚫 Foydalanuvchini bloklash", callback_data="ban_start")])
+        rows.append([InlineKeyboardButton(text="✅ Blokdan chiqarish", callback_data="unban_start")])
+        rows.append([InlineKeyboardButton(text="📢 Xabar yuborish (broadcast)", callback_data="broadcast_start")])
+    rows.append([InlineKeyboardButton(text="⚙️ Admin sozlamalari", callback_data="admin_settings")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -376,6 +413,214 @@ async def place_phone(message: Message, state: FSMContext):
     if status == 200:
         label = "Oshxona" if place_type == "oshxona" else "Restoran"
         await message.answer(f"✅ {label} qo'shildi: {fsm_data['name']}", reply_markup=admin_root_kb(uid))
+    else:
+        await message.answer(f"❌ Xatolik: {data.get('error')}")
+    await state.clear()
+
+
+# ---------- Taom qo'shish (rasm + narx) ----------
+@router.callback_query(F.data == "menuitem_start")
+async def menuitem_start(callback: CallbackQuery, state: FSMContext):
+    uid = callback.from_user.id
+    data, status = await api_get("/api/bot/restaurants")
+    restaurants_cache[uid] = data if status == 200 else []
+    if not restaurants_cache[uid]:
+        await callback.message.answer("Hozircha restoran/oshxona yo'q. Avval uni qo'shing.")
+        await callback.answer()
+        return
+    buttons = [
+        [InlineKeyboardButton(text=f"{'🍲' if r['type']=='oshxona' else '🍽️'} {r['name']}", callback_data=f"mipick_{r['id']}")]
+        for r in restaurants_cache[uid]
+    ]
+    await callback.message.answer("Qaysi restoran/oshxonaga taom qo'shamiz?", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await state.set_state(AddMenuItem.waiting_restaurant)
+    await callback.answer()
+
+
+@router.callback_query(AddMenuItem.waiting_restaurant, F.data.startswith("mipick_"))
+async def menuitem_pick_restaurant(callback: CallbackQuery, state: FSMContext):
+    rid = int(callback.data.split("_")[1])
+    pending_menu_item[callback.from_user.id] = {"restaurant_id": rid}
+    await callback.message.answer("Taom nomini kiriting:")
+    await state.set_state(AddMenuItem.waiting_name)
+    await callback.answer()
+
+
+@router.message(AddMenuItem.waiting_name)
+async def menuitem_got_name(message: Message, state: FSMContext):
+    uid = message.from_user.id
+    pending_menu_item.setdefault(uid, {})["name"] = message.text.strip()
+    await message.answer("Narxini kiriting (faqat raqam, so'mda, masalan 25000):")
+    await state.set_state(AddMenuItem.waiting_price)
+
+
+@router.message(AddMenuItem.waiting_price)
+async def menuitem_got_price(message: Message, state: FSMContext):
+    uid = message.from_user.id
+    price_text = message.text.strip().replace(" ", "").replace(",", "")
+    if not price_text.isdigit():
+        await message.answer("Narx faqat raqam bo'lishi kerak. Qaytadan kiriting:")
+        return
+    pending_menu_item.setdefault(uid, {})["price"] = int(price_text)
+    await message.answer("Endi taomning rasmini yuboring (yoki rasmsiz o'tkazish uchun '-' yozing):")
+    await state.set_state(AddMenuItem.waiting_photo)
+
+
+@router.message(AddMenuItem.waiting_photo, F.photo)
+async def menuitem_got_photo(message: Message, state: FSMContext):
+    uid = message.from_user.id
+    file_id = message.photo[-1].file_id
+    image_url = f"{BACKEND_URL}/api/photo/{file_id}"
+    await finalize_menu_item(message, state, uid, image_url)
+
+
+@router.message(AddMenuItem.waiting_photo)
+async def menuitem_skip_photo(message: Message, state: FSMContext):
+    uid = message.from_user.id
+    if message.text and message.text.strip() == "-":
+        await finalize_menu_item(message, state, uid, "")
+    else:
+        await message.answer("Rasm yuboring yoki o'tkazib yuborish uchun '-' yozing:")
+
+
+async def finalize_menu_item(message: Message, state: FSMContext, uid: int, image_url: str):
+    item = pending_menu_item.get(uid, {})
+    payload = {
+        "by_telegram_id": uid,
+        "name": item.get("name"),
+        "price": item.get("price"),
+        "image_url": image_url,
+    }
+    data, status = await api_post(f"/api/bot/restaurants/{item.get('restaurant_id')}/menu", payload)
+    if status == 200:
+        await message.answer(f"✅ Taom qo'shildi: {item.get('name')} — {item.get('price'):,} so'm", reply_markup=admin_root_kb(uid))
+    else:
+        await message.answer(f"❌ Xatolik: {data.get('error')}")
+    await state.clear()
+    pending_menu_item.pop(uid, None)
+
+
+# ---------- Dostavchik qo'shish / ro'yxati ----------
+@router.callback_query(F.data == "courier_add")
+async def courier_add_start(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer("Dostavchining Telegram ID raqamini yuboring (@userinfobot orqali bilib olish mumkin):")
+    await state.set_state(AddCourier.waiting_telegram_id)
+    await callback.answer()
+
+
+@router.message(AddCourier.waiting_telegram_id)
+async def courier_got_id(message: Message, state: FSMContext):
+    if not message.text.strip().isdigit():
+        await message.answer("Telegram ID faqat raqamlardan iborat bo'lishi kerak. Qaytadan yuboring:")
+        return
+    await state.update_data(courier_telegram_id=message.text.strip())
+    await message.answer("Dostavchining ismini kiriting:")
+    await state.set_state(AddCourier.waiting_name)
+
+
+@router.message(AddCourier.waiting_name)
+async def courier_got_name(message: Message, state: FSMContext):
+    uid = message.from_user.id
+    fsm_data = await state.get_data()
+    payload = {"by_telegram_id": uid, "telegram_id": fsm_data["courier_telegram_id"], "name": message.text.strip()}
+    data, status = await api_post("/api/bot/add-courier", payload)
+    if status == 200:
+        await message.answer(f"✅ Dostavchik qo'shildi: {message.text.strip()}", reply_markup=admin_root_kb(uid))
+    else:
+        await message.answer(f"❌ Xatolik: {data.get('error')}")
+    await state.clear()
+
+
+@router.callback_query(F.data == "courier_list")
+async def courier_list(callback: CallbackQuery):
+    data, status = await api_get("/api/bot/couriers")
+    if status != 200 or not data:
+        await callback.message.answer("Hali dostavchik yo'q.")
+        await callback.answer()
+        return
+    lines = [f"• {'🟢' if c['is_active'] else '🔴'} {c.get('name') or '-'} (tg: {c['telegram_id']})" for c in data]
+    await callback.message.answer("🚴 Dostavchiklar:\n\n" + "\n".join(lines))
+    await callback.answer()
+
+
+# ---------- Dostavchik kanalidagi "tanlash" tugmasi ----------
+@router.callback_query(F.data.startswith("asgcr_"))
+async def assign_courier(callback: CallbackQuery):
+    _, order_id, courier_id = callback.data.split("_")
+    data, status = await api_post("/api/bot/assign-courier", {
+        "by_telegram_id": callback.from_user.id,
+        "order_id": int(order_id),
+        "courier_id": int(courier_id),
+    })
+    if status == 200:
+        await callback.message.edit_text(
+            f"{callback.message.text}\n\n✅ Tayinlandi: {data.get('courier_name') or '-'}"
+        )
+        await callback.answer("Dostavchi tayinlandi ✅")
+    else:
+        await callback.answer(data.get("error", "Xatolik"), show_alert=True)
+
+
+# ---------- Foydalanuvchini bloklash / blokdan chiqarish ----------
+@router.callback_query(F.data == "ban_start")
+async def ban_start(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer("Bloklanadigan foydalanuvchining Telegram ID yoki emailini yuboring:")
+    await state.set_state(BanUser.waiting_target)
+    await callback.answer()
+
+
+@router.message(BanUser.waiting_target)
+async def ban_got_target(message: Message, state: FSMContext):
+    await state.update_data(target=message.text.strip())
+    await message.answer("Bloklash sababini yozing (yoki '-'):")
+    await state.set_state(BanUser.waiting_reason)
+
+
+@router.message(BanUser.waiting_reason)
+async def ban_got_reason(message: Message, state: FSMContext):
+    uid = message.from_user.id
+    fsm_data = await state.get_data()
+    reason = "" if message.text.strip() == "-" else message.text.strip()
+    data, status = await api_post("/api/bot/ban-user", {"by_telegram_id": uid, "target": fsm_data["target"], "reason": reason})
+    if status == 200:
+        await message.answer(f"🚫 Bloklandi: {data.get('email')}", reply_markup=admin_root_kb(uid))
+    else:
+        await message.answer(f"❌ Xatolik: {data.get('error')}")
+    await state.clear()
+
+
+@router.callback_query(F.data == "unban_start")
+async def unban_start(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer("Blokdan chiqariladigan foydalanuvchining Telegram ID yoki emailini yuboring:")
+    await state.set_state(UnbanUser.waiting_target)
+    await callback.answer()
+
+
+@router.message(UnbanUser.waiting_target)
+async def unban_got_target(message: Message, state: FSMContext):
+    uid = message.from_user.id
+    data, status = await api_post("/api/bot/unban-user", {"by_telegram_id": uid, "target": message.text.strip()})
+    if status == 200:
+        await message.answer(f"✅ Blokdan chiqarildi: {data.get('email')}", reply_markup=admin_root_kb(uid))
+    else:
+        await message.answer(f"❌ Xatolik: {data.get('error')}")
+    await state.clear()
+
+
+# ---------- Broadcast (ommaviy xabar) ----------
+@router.callback_query(F.data == "broadcast_start")
+async def broadcast_start(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer("Barcha foydalanuvchilarga (email + telegram) yuboriladigan xabar matnini kiriting:")
+    await state.set_state(Broadcast.waiting_text)
+    await callback.answer()
+
+
+@router.message(Broadcast.waiting_text)
+async def broadcast_got_text(message: Message, state: FSMContext):
+    uid = message.from_user.id
+    data, status = await api_post("/api/bot/broadcast", {"by_telegram_id": uid, "text": message.text})
+    if status == 200:
+        await message.answer("📢 Xabar yuborish boshlandi, tez orada barchaga yetib boradi.", reply_markup=admin_root_kb(uid))
     else:
         await message.answer(f"❌ Xatolik: {data.get('error')}")
     await state.clear()

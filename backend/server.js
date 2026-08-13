@@ -31,6 +31,27 @@ app.post('/api/ping-open', (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true, name: 'DeliGo backend' }));
 
+// Telegram orqali (bot bilan) yuklangan rasmlarni (masalan taom rasmi) saytda ko'rsatish uchun proksi.
+// Bot foydalanuvchi yuborgan fotosuratning file_id sini oladi, biz shu yerda uni haqiqiy rasm baytlariga
+// aylantiramiz — shu bilan bot tokeni brauzerga hech qachon ko'rinmaydi.
+app.get('/api/photo/:file_id', async (req, res) => {
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) return res.status(404).end();
+    const fetch = require('node-fetch');
+    const infoResp = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${req.params.file_id}`);
+    const info = await infoResp.json();
+    if (!info.ok) return res.status(404).end();
+    const fileResp = await fetch(`https://api.telegram.org/file/bot${token}/${info.result.file_path}`);
+    res.set('Content-Type', fileResp.headers.get('content-type') || 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=86400');
+    fileResp.body.pipe(res);
+  } catch (err) {
+    console.error('Rasm proksi xato:', err.message);
+    res.status(500).end();
+  }
+});
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`DeliGo backend ${PORT}-portda ishga tushdi`);

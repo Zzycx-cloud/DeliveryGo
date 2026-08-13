@@ -51,8 +51,29 @@ Server `http://localhost:4000` da ishga tushadi va **shu manzil orqali sayt/web-
   ro'yxatdan o'tilganda ham super admin huquqi beriladi.
 - **Buyurtmalar log kanali:** `-1004443453718` — har bir yangi buyurtma shu Telegram kanaliga yuboriladi.
 - **Umumiy log kanali:** `-1004495081262` — ro'yxatdan o'tish, ilova ochilishi, taom/admin qo'shilishi shu yerga yoziladi.
+- **Dostavchiklar kanali:** `-1004338194529` (`TELEGRAM_COURIERS_CHANNEL_ID`) — yangi buyurtma tushganda shu kanalga
+  faol dostavchiklar ro'yxati bilan tugmalar yuboriladi; kanaldagi admin "tanlash" tugmasini bosib buyurtmani
+  o'sha dostavchiga tayinlaydi (dostavchi va mijozga avtomatik xabar boradi).
 
-Botni shu kanallarga xabar yozа olishi uchun **bot kanallarga admin qilib qo'shilgan bo'lishi kerak.**
+Botni shu kanallarga xabar yozа olishi uchun **bot HAR UCHALA kanalga ham admin qilib qo'shilgan bo'lishi kerak.**
+
+### Muhim: bot va backend alohida hostinglarda ishlaganda
+
+`bot/.env` dagi `BACKEND_URL` **backend haqiqiy hosting manzili** bo'lishi SHART (masalan
+`https://deligo-backend.onrender.com`), `http://localhost:4000` EMAS — aks holda bot admin panel
+buyruqlari, taom/restoran qo'shish, statistika va boshqa hammasi ishlamaydi, chunki bot backendga
+umuman ulana olmaydi. Bu eng ko'p uchraydigan "bot ishlamayapti" sababi.
+
+### Bot admin panel (menyu, /addadmin YO'Q)
+
+Admin panel endi to'liq tugmali menyu: 📊 Statistika, 📋 Admin log, 📈 Keng statistika, 👑/➕ Admin
+qo'shish (rolga qarab: owner, katta admin, oddiy admin, restoran admini), ➖ Admin olib tashlash,
+🏅 Adminlar ro'yxati, 🍽 Restoran/🍲 Oshxona qo'shish, 🍔 Taom qo'shish (nomi + narxi + **rasmi**, rasmni
+botga to'g'ridan-to'g'ri jo'natish orqali — rasm serverga Telegram file_id orqali proksi qilinadi,
+`/api/photo/:file_id`), 🚴 Dostavchik qo'shish/ro'yxati, 🚫 Bloklash/✅ Blokdan chiqarish, 📢 Xabar
+yuborish (email + telegram + kanal). Buning uchun `/start` qayta bosib botni qayta ishga tushiring —
+eski keshlangan menyu emas, YANGI kodni ishlatayotganingizga ishonch hosil qiling (hostingga qayta
+deploy qilinishi kerak).
 
 ## 2) Web-ilova (sayt)
 
