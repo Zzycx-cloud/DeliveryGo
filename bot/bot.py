@@ -15,6 +15,7 @@ import logging
 import os
 
 import aiohttp
+import aiohttp.web
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.filters import CommandStart, Command
@@ -338,6 +339,25 @@ async def finalize_add_admin(message: Message, state: FSMContext, uid: int, rest
     await state.clear()
 
 
+# ===================== RENDER UCHUN HEALTH-CHECK SERVER =====================
+# Render "Web Service" turida xizmatning tirikligini bilish uchun PORT'ni
+# tinglashini kutadi. Bot o'zi polling qilgani uchun port ochmaydi — shu sabab
+# shu yerda juda kichik HTTP server ochib, Render'ning tekshiruvini qondiramiz.
+async def start_health_server():
+    port = int(os.getenv("PORT", "10000"))
+
+    async def health(request):
+        return aiohttp.web.Response(text="DeliGo bot ishlayapti")
+
+    app = aiohttp.web.Application()
+    app.router.add_get("/", health)
+    runner = aiohttp.web.AppRunner(app)
+    await runner.setup()
+    site = aiohttp.web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logging.info(f"Health-check server {port}-portda ishga tushdi")
+
+
 # ===================== RUN =====================
 async def main():
     if not BOT_TOKEN:
@@ -345,6 +365,8 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
+
+    await start_health_server()
     await dp.start_polling(bot)
 
 
