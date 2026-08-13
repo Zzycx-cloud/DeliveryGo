@@ -106,17 +106,21 @@
       <div class="profile-badges" id="profileBadges"></div>
     </div>
     <div class="settings-list">
-      <div class="settings-row" id="langRow">
-        <span>🌐 Til</span><span class="settings-value" id="currentLangLabel">O‘zbek</span>
+      <div class="settings-group">
+        <div class="settings-row" id="langRow">
+          <span>🌐 Til</span><span class="settings-value" id="currentLangLabel">O‘zbek</span>
+        </div>
+        <div class="settings-row" id="paymentRow">
+          <span>💳 To‘lov usuli</span><span class="settings-value" id="currentPaymentLabel">Naqd pul</span>
+        </div>
+        <div class="settings-row admin-only hidden" id="adminPanelRow">
+          <span>🛡 Admin panel</span>
+        </div>
       </div>
-      <div class="settings-row" id="paymentRow">
-        <span>💳 To‘lov usuli</span><span class="settings-value" id="currentPaymentLabel">Naqd pul</span>
-      </div>
-      <div class="settings-row admin-only hidden" id="adminPanelRow">
-        <span>🛡 Admin panel</span><span class="settings-value">→</span>
-      </div>
-      <div class="settings-row" id="logoutRow">
-        <span style="color:#ff5c5c">🚪 Chiqish</span>
+      <div class="settings-group">
+        <div class="settings-row no-chevron" id="logoutRow">
+          <span style="color:#ff5c5c">🚪 Chiqish</span>
+        </div>
       </div>
     </div>
   </div>
