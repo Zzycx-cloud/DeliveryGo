@@ -23,13 +23,28 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-function requireSuperAdmin(req, res, next) {
+// Owner (bosh egasi) yoki katta admin (senior_admin) — sozlamalar, broadcast,
+// oddiy admin/restoran admini qo'shish/olib tashlash uchun yetarli
+function requireSeniorAdmin(req, res, next) {
   const admin = db.prepare('SELECT * FROM admins WHERE email = ?').get(req.user.email);
-  if (!admin || admin.role !== 'super_admin') {
-    return res.status(403).json({ error: 'Faqat bosh admin uchun ruxsat' });
+  if (!admin || !['owner', 'senior_admin'].includes(admin.role)) {
+    return res.status(403).json({ error: 'Faqat katta admin yoki owner uchun ruxsat' });
   }
   req.admin = admin;
   next();
 }
 
-module.exports = { auth, requireAdmin, requireSuperAdmin };
+// Faqat owner — yangi owner/katta admin qo'shish, boshqa adminlarni to'liq boshqarish
+function requireOwner(req, res, next) {
+  const admin = db.prepare('SELECT * FROM admins WHERE email = ?').get(req.user.email);
+  if (!admin || admin.role !== 'owner') {
+    return res.status(403).json({ error: 'Faqat owner uchun ruxsat' });
+  }
+  req.admin = admin;
+  next();
+}
+
+// Eski nom bilan mosligi uchun (ba'zi joylarda hali ishlatiladi) — owner talab qiladi
+const requireSuperAdmin = requireOwner;
+
+module.exports = { auth, requireAdmin, requireSuperAdmin, requireSeniorAdmin, requireOwner };

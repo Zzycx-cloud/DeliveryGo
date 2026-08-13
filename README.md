@@ -47,7 +47,7 @@ Server `http://localhost:4000` da ishga tushadi va **shu manzil orqali sayt/web-
 
 ### Boshlang'ich sozlamalar (kod ichida qat'iy o'rnatilgan)
 - **Bosh admin (super admin):** `ibragimovfkhan@gmail.com` — bu email bilan kirilganda avtomatik super admin bo'ladi.
-- **Bosh admin telefon raqami:** `+998972032108` (`SUPER_ADMIN_PHONE`) — Telegram bot orqali shu raqam bilan
+- **Bosh admin (owner) telefon raqami:** `+998972350025` (`SUPER_ADMIN_PHONE`), Telegram ID: `7203210832` (`SUPER_ADMIN_TELEGRAM_ID`), email: `ibragimovfkhan@gmail.com` (`SUPER_ADMIN_EMAIL`) — Telegram bot orqali shu ID/raqam bilan
   ro'yxatdan o'tilganda ham super admin huquqi beriladi.
 - **Buyurtmalar log kanali:** `-1004443453718` — har bir yangi buyurtma shu Telegram kanaliga yuboriladi.
 - **Umumiy log kanali:** `-1004495081262` — ro'yxatdan o'tish, ilova ochilishi, taom/admin qo'shilishi shu yerga yoziladi.

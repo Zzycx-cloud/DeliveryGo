@@ -203,7 +203,8 @@ function renderProfileBadges() {
   if (state.isAdmin) {
     const b = document.createElement('span');
     b.className = 'profile-badge';
-    b.textContent = state.adminRole === 'super_admin' ? '🛡 Bosh admin' : '🛡 Admin';
+    const roleLabels = { owner: '👑 Owner', senior_admin: '🌟 Katta admin', admin: '🛠 Oddiy admin', restaurant_admin: '🍽 Restoran admini' };
+    b.textContent = roleLabels[state.adminRole] || '🛡 Admin';
     el.appendChild(b);
   }
   if (state.user && state.user.plus_member) {
@@ -380,7 +381,7 @@ function switchAdminTab(tab) {
   if (tab === 'admins') loadAdminAdmins();
   if (tab === 'settings') loadAdminSettings();
 
-  const isSuper = state.adminRole === 'super_admin';
+  const isSuper = ['owner','senior_admin'].includes(state.adminRole);
   document.querySelectorAll('.admin-super-only').forEach((el) => el.classList.toggle('hidden', !isSuper));
 }
 
@@ -391,7 +392,7 @@ async function loadAdminStats() {
     <div class="stat-card"><div class="stat-num">${s.restaurantsCount}</div><div class="stat-label">Restoranlar</div></div>
     <div class="stat-card"><div class="stat-num">${s.ordersCount}</div><div class="stat-label">Buyurtmalar</div></div>
     <div class="stat-card"><div class="stat-num">${s.revenue.toLocaleString()}</div><div class="stat-label">Aylanma (so'm)</div></div>`;
-  const isSuper = state.adminRole === 'super_admin';
+  const isSuper = ['owner','senior_admin'].includes(state.adminRole);
   document.querySelectorAll('.admin-super-only').forEach((el) => el.classList.toggle('hidden', !isSuper));
 }
 
@@ -473,6 +474,8 @@ async function loadAdminUsers() {
   });
 }
 
+const ROLE_LABELS = { owner: '👑 Owner', senior_admin: '🌟 Katta admin', admin: '🛠 Oddiy admin', restaurant_admin: '🍽 Restoran admini' };
+
 async function loadAdminAdmins() {
   const rows = await api('/api/admin/admins');
   const list = document.getElementById('adminAdminsList');
@@ -482,15 +485,21 @@ async function loadAdminAdmins() {
     el.className = 'admin-row';
     el.innerHTML = `
       <div class="admin-row-info">
-        <div class="admin-row-title">${escapeHtml(a.email)}</div>
-        <div class="admin-row-sub">${a.role}${a.restaurant_id ? ' • restoran #' + a.restaurant_id : ''}</div>
+        <div class="admin-row-title">${escapeHtml(a.email)}${a.is_founder ? ' ⭐' : ''}</div>
+        <div class="admin-row-sub">${ROLE_LABELS[a.role] || a.role}${a.restaurant_id ? ' • restoran #' + a.restaurant_id : ''}</div>
       </div>
-      <button class="mini-btn danger">O'chirish</button>`;
-    el.querySelector('button').addEventListener('click', async () => {
-      if (a.role === 'super_admin') return alert('Bosh adminni o\'chirib bo\'lmaydi');
-      await api(`/api/admin/admins/${encodeURIComponent(a.email)}`, { method: 'DELETE' });
-      loadAdminAdmins();
-    });
+      ${a.is_founder ? '' : '<button class="mini-btn danger">O\'chirish</button>'}`;
+    const btn = el.querySelector('button');
+    if (btn) {
+      btn.addEventListener('click', async () => {
+        try {
+          await api(`/api/admin/admins/${encodeURIComponent(a.email)}`, { method: 'DELETE' });
+          loadAdminAdmins();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    }
     list.appendChild(el);
   });
 }
@@ -604,14 +613,17 @@ function openAddMenuItemModal(restaurant) {
 
 function openAddAdminModal() {
   const options = state.restaurantsCache.map((r) => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join('');
+  const isOwner = state.adminRole === 'owner';
+  const roleOptions = [
+    isOwner ? '<option value="owner">👑 Owner</option>' : '',
+    isOwner ? '<option value="senior_admin">🌟 Katta admin</option>' : '',
+    '<option value="admin" selected>🛠 Oddiy admin</option>',
+    '<option value="restaurant_admin">🍽 Restoran/Oshxona admini</option>',
+  ].join('');
   showModal(`
     <h3>Yangi admin qo'shish</h3>
-    <input class="input" id="a_email" placeholder="Admin emaili">
-    <select class="input" id="a_role">
-      <option value="admin">Umumiy admin (hammasini boshqaradi)</option>
-      <option value="restaurant_admin">Restoran/Oshxona admini</option>
-      <option value="super_admin">Bosh admin</option>
-    </select>
+    <input class="input" id="a_email" placeholder="Admin emaili (yoki tg&lt;telegram_id&gt;@deligo.bot)">
+    <select class="input" id="a_role">${roleOptions}</select>
     <div id="a_restaurant_wrap" class="hidden">
       <label class="muted" style="font-size:12px">Qaysi restoran / oshxona?</label>
       <select class="input" id="a_restaurant">${options}</select>

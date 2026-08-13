@@ -25,12 +25,16 @@ router.post('/request-code', async (req, res) => {
 
   // Frontend'ga DARHOL javob qaytaramiz (SMTP javobini kutmaymiz) —
   // shu sabab "Kodni kiriting" ekrani bir zumda ochiladi.
-  // Hozircha sinov bosqichida bo'lgani uchun kodni javobda ham ko'rsatamiz —
-  // shunda Render SMTP portini bloklab qo'ysa ham, kodni saytda ko'rib ishlata olasiz.
-  // Productionga chiqqanda bu qatorni olib tashlang (xavfsizlik uchun).
-  res.json({ ok: true, message: 'Kod emailga yuborildi', dev_code: code });
+  // SMTP haqiqiy sozlangan bo'lsa (production), dev_code HECH QACHON javobda ko'rsatilmaydi —
+  // faqat SMTP sozlanmagan lokal/sinov holatida ko'rinadi.
+  const realSmtp = isRealSmtpConfigured();
+  res.json({
+    ok: true,
+    message: realSmtp ? 'Kod emailga yuborildi' : 'Kod yuborildi (SMTP sozlanmagan — dev rejim)',
+    ...(realSmtp ? {} : { dev_code: code }),
+  });
 
-  if (isRealSmtpConfigured()) {
+  if (realSmtp) {
     try {
       await sendMailWithTimeout({
         to: email,

@@ -94,9 +94,22 @@ class Checkout(StatesGroup):
 
 
 class AddAdmin(StatesGroup):
-    waiting_email = State()
-    waiting_role = State()
+    waiting_telegram_id = State()
     waiting_restaurant = State()
+
+
+class AddPlace(StatesGroup):
+    waiting_name = State()
+    waiting_address = State()
+    waiting_phone = State()
+
+
+# {telegram_id: "owner"/"senior_admin"/"admin"/"restaurant_admin"/None}
+user_admin_role = {}
+# {telegram_id: role kutilayotgan yangi admin uchun ("owner"/"senior_admin"/"admin"/"restaurant_admin")}
+pending_new_admin_role = {}
+# {telegram_id: "restaurant"/"oshxona" - AddPlace flow uchun}
+pending_place_type = {}
 
 
 # ===================== START =====================
@@ -139,6 +152,7 @@ async def got_contact(message: Message):
         await message.answer(t(uid, "banned", reason=data.get("banReason") or "-"), reply_markup=ReplyKeyboardRemove())
         return
 
+    user_admin_role[uid] = data.get("adminRole")
     await show_main_menu(message, is_admin=data.get("isAdmin"))
 
 
@@ -265,55 +279,187 @@ async def my_orders(message: Message):
     await message.answer(text)
 
 
-# ===================== ADMIN: /addadmin =====================
+# ===================== ADMIN PANEL (asosiy) =====================
+ROLE_LABELS = {
+    "owner": "👑 Owner",
+    "senior_admin": "🌟 Katta admin",
+    "admin": "🛠 Oddiy admin",
+    "restaurant_admin": "🍽 Restoran admini",
+}
+
+
+def admin_root_kb(uid: int) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text="🍽 Restoran qo'shish", callback_data="place_restaurant")],
+        [InlineKeyboardButton(text="🍲 Oshxona qo'shish", callback_data="place_oshxona")],
+        [InlineKeyboardButton(text="⚙️ Admin sozlamalari", callback_data="admin_settings")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_settings_kb(role: str) -> InlineKeyboardMarkup:
+    is_owner = role == "owner"
+    is_senior_plus = role in ("owner", "senior_admin")
+    rows = [
+        [InlineKeyboardButton(text="📊 Statistika", callback_data="astat")],
+        [InlineKeyboardButton(text="📋 Admin log", callback_data="alog")],
+        [InlineKeyboardButton(text="📈 Keng statistika", callback_data="awide")],
+    ]
+    if is_owner:
+        rows.append([InlineKeyboardButton(text="👑 Owner qo'shish", callback_data="addrole_owner")])
+    if is_owner:
+        rows.append([InlineKeyboardButton(text="➕ Katta admin qo'shish", callback_data="addrole_senior_admin")])
+    if is_senior_plus:
+        rows.append([InlineKeyboardButton(text="➕ Oddiy admin qo'shish", callback_data="addrole_admin")])
+        rows.append([InlineKeyboardButton(text="🏪 Restoran admini qo'shish", callback_data="addrole_restaurant_admin")])
+        rows.append([InlineKeyboardButton(text="➖ Admin olib tashlash", callback_data="admin_remove_list")])
+        rows.append([InlineKeyboardButton(text="🏅 Adminlar ro'yxati", callback_data="admin_list")])
+    rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_root")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 @router.message(F.text.in_([TEXT["uz"]["admin_panel"]]))
 async def admin_panel(message: Message):
-    await message.answer(
-        "🛡 Admin buyruqlari:\n"
-        "/addadmin — yangi admin qo'shish (faqat bosh admin uchun)\n"
-        "Statistika, foydalanuvchilarni ban/shtraf qilish uchun DeliGo veb-admin panelidan foydalaning."
-    )
+    await message.answer("🛡 Admin panel", reply_markup=admin_root_kb(message.from_user.id))
 
 
-@router.message(Command("addadmin"))
-async def add_admin_start(message: Message, state: FSMContext):
-    await message.answer("Yangi admin emailini kiriting:")
-    await state.set_state(AddAdmin.waiting_email)
+@router.callback_query(F.data == "admin_root")
+async def admin_root(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("🛡 Admin panel", reply_markup=admin_root_kb(callback.from_user.id))
 
 
-@router.message(AddAdmin.waiting_email)
-async def add_admin_email(message: Message, state: FSMContext):
-    await state.update_data(new_email=message.text.strip())
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Umumiy admin", callback_data="role_admin")],
-        [InlineKeyboardButton(text="Restoran/Oshxona admini", callback_data="role_restaurant_admin")],
-        [InlineKeyboardButton(text="Bosh admin", callback_data="role_super_admin")],
-    ])
-    await message.answer("Rolini tanlang:", reply_markup=kb)
-    await state.set_state(AddAdmin.waiting_role)
-
-
-@router.callback_query(AddAdmin.waiting_role, F.data.startswith("role_"))
-async def add_admin_role(callback: CallbackQuery, state: FSMContext):
-    role = callback.data[len("role_"):]
-    await state.update_data(role=role)
+@router.callback_query(F.data == "admin_settings")
+async def admin_settings(callback: CallbackQuery):
     uid = callback.from_user.id
+    role = user_admin_role.get(uid) or "admin"
+    await callback.message.edit_text("⚙️ Admin sozlamalari", reply_markup=admin_settings_kb(role))
+
+
+# ---------- Restoran / Oshxona qo'shish ----------
+@router.callback_query(F.data.startswith("place_"))
+async def place_start(callback: CallbackQuery, state: FSMContext):
+    place_type = callback.data.split("_", 1)[1]  # restaurant | oshxona
+    pending_place_type[callback.from_user.id] = place_type
+    label = "Oshxona" if place_type == "oshxona" else "Restoran"
+    await callback.message.answer(f"{label} nomini kiriting:")
+    await state.set_state(AddPlace.waiting_name)
+
+
+@router.message(AddPlace.waiting_name)
+async def place_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text.strip())
+    await message.answer("Manzilini kiriting (yoki '-' agar hozircha kerak bo'lmasa):")
+    await state.set_state(AddPlace.waiting_address)
+
+
+@router.message(AddPlace.waiting_address)
+async def place_address(message: Message, state: FSMContext):
+    await state.update_data(address=message.text.strip())
+    await message.answer("Telefon raqamini kiriting (yoki '-'):")
+    await state.set_state(AddPlace.waiting_phone)
+
+
+@router.message(AddPlace.waiting_phone)
+async def place_phone(message: Message, state: FSMContext):
+    uid = message.from_user.id
+    fsm_data = await state.get_data()
+    place_type = pending_place_type.get(uid, "restaurant")
+    payload = {
+        "by_telegram_id": uid,
+        "name": fsm_data["name"],
+        "type": place_type,
+        "address": None if fsm_data["address"] == "-" else fsm_data["address"],
+        "phone": None if message.text.strip() == "-" else message.text.strip(),
+    }
+    data, status = await api_post("/api/bot/restaurants", payload)
+    if status == 200:
+        label = "Oshxona" if place_type == "oshxona" else "Restoran"
+        await message.answer(f"✅ {label} qo'shildi: {fsm_data['name']}", reply_markup=admin_root_kb(uid))
+    else:
+        await message.answer(f"❌ Xatolik: {data.get('error')}")
+    await state.clear()
+
+
+# ---------- Statistika / Admin log / Keng statistika ----------
+@router.callback_query(F.data == "astat")
+async def show_stats(callback: CallbackQuery):
+    data, status = await api_get("/api/bot/stats")
+    if status != 200:
+        await callback.answer("Xatolik", show_alert=True)
+        return
+    text = (
+        f"📊 Statistika\n\n"
+        f"👤 Foydalanuvchilar: {data['usersCount']}\n"
+        f"🍽 Restoran/oshxonalar: {data['restaurantsCount']}\n"
+        f"📦 Buyurtmalar: {data['ordersCount']}\n"
+        f"💰 Tushum (yetkazilgan): {data['revenue']:,} so'm"
+    )
+    await callback.message.answer(text)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "alog")
+async def show_admin_log(callback: CallbackQuery):
+    data, status = await api_get("/api/bot/admin-logs")
+    if status != 200 or not data:
+        await callback.message.answer("Admin log bo'sh.")
+        await callback.answer()
+        return
+    lines = [f"• {row['created_at']} — {row['actor']}: {row['action']} ({row['details']})" for row in data[:15]]
+    await callback.message.answer("📋 Admin log (oxirgi 15 ta):\n\n" + "\n".join(lines))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "awide")
+async def show_wide_stats(callback: CallbackQuery):
+    data, status = await api_get("/api/bot/wide-stats")
+    if status != 200:
+        await callback.answer("Xatolik", show_alert=True)
+        return
+    by_day = "\n".join(f"{d['day']}: {d['orders']} ta buyurtma, {d['revenue']:,} so'm" for d in data["byDay"]) or "-"
+    top = "\n".join(f"{r['name']}: {r['orders']} ta, {r['revenue']:,} so'm" for r in data["topRestaurants"]) or "-"
+    await callback.message.answer(f"📈 Kunlar bo'yicha (oxirgi 7 kun):\n{by_day}\n\n🏆 TOP restoranlar:\n{top}")
+    await callback.answer()
+
+
+# ---------- Admin qo'shish (owner/katta admin/oddiy admin/restoran admini) ----------
+@router.callback_query(F.data.startswith("addrole_"))
+async def add_admin_pick_role(callback: CallbackQuery, state: FSMContext):
+    role = callback.data[len("addrole_"):]
+    pending_new_admin_role[callback.from_user.id] = role
+    await callback.message.answer(
+        f"{ROLE_LABELS.get(role, role)} qo'shish uchun yangi foydalanuvchining Telegram ID raqamini yuboring.\n"
+        "(Telegram ID ni bilish uchun u @userinfobot ga /start yozishi mumkin)"
+    )
+    await state.set_state(AddAdmin.waiting_telegram_id)
+
+
+@router.message(AddAdmin.waiting_telegram_id)
+async def add_admin_got_id(message: Message, state: FSMContext):
+    uid = message.from_user.id
+    new_id = message.text.strip()
+    if not new_id.isdigit():
+        await message.answer("Telegram ID faqat raqamlardan iborat bo'lishi kerak. Qaytadan yuboring:")
+        return
+    await state.update_data(new_telegram_id=new_id)
+    role = pending_new_admin_role.get(uid, "admin")
 
     if role == "restaurant_admin":
         data, status = await api_get("/api/bot/restaurants")
         restaurants_cache[uid] = data if status == 200 else []
         if not restaurants_cache[uid]:
-            await callback.message.answer("Hozircha restoran/oshxona yo'q. Avval uni qo'shing.")
+            await message.answer("Hozircha restoran/oshxona yo'q. Avval uni qo'shing.")
             await state.clear()
             return
         buttons = [
             [InlineKeyboardButton(text=f"{'🍲' if r['type']=='oshxona' else '🍽️'} {r['name']}", callback_data=f"pickrest_{r['id']}")]
             for r in restaurants_cache[uid]
         ]
-        await callback.message.answer("Qaysi restoran yoki oshxona uchun admin bo'lsin?", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+        await message.answer("Qaysi restoran yoki oshxona uchun admin bo'lsin?", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
         await state.set_state(AddAdmin.waiting_restaurant)
     else:
-        await finalize_add_admin(callback.message, state, uid, restaurant_id=None)
+        await finalize_add_admin(message, state, uid, restaurant_id=None)
 
 
 @router.callback_query(AddAdmin.waiting_restaurant, F.data.startswith("pickrest_"))
@@ -325,18 +471,72 @@ async def add_admin_restaurant(callback: CallbackQuery, state: FSMContext):
 
 async def finalize_add_admin(message: Message, state: FSMContext, uid: int, restaurant_id):
     fsm_data = await state.get_data()
+    role = pending_new_admin_role.get(uid, "admin")
     payload = {
         "by_telegram_id": uid,
-        "new_email": fsm_data["new_email"],
-        "role": fsm_data["role"],
+        "new_telegram_id": fsm_data["new_telegram_id"],
+        "role": role,
         "restaurant_id": restaurant_id,
     }
     data, status = await api_post("/api/bot/add-admin", payload)
     if status == 200:
-        await message.answer(f"✅ {fsm_data['new_email']} admin sifatida qo'shildi ({fsm_data['role']}).")
+        await message.answer(f"✅ Telegram ID {fsm_data['new_telegram_id']} — {ROLE_LABELS.get(role, role)} sifatida qo'shildi.")
     else:
-        await message.answer(f"Xatolik: {data.get('error')}")
+        await message.answer(f"❌ Xatolik: {data.get('error')}")
     await state.clear()
+    pending_new_admin_role.pop(uid, None)
+
+
+# ---------- Adminlar ro'yxati / Admin olib tashlash ----------
+@router.callback_query(F.data == "admin_list")
+async def admin_list(callback: CallbackQuery):
+    data, status = await api_get("/api/bot/admins")
+    if status != 200 or not data:
+        await callback.message.answer("Hali adminlar yo'q.")
+        await callback.answer()
+        return
+    lines = []
+    for a in data:
+        label = ROLE_LABELS.get(a["role"], a["role"])
+        founder = " ⭐ (asoschi)" if a.get("is_founder") else ""
+        lines.append(f"• {label}{founder} — {a['email']} (tg: {a.get('telegram_id') or '-'})")
+    await callback.message.answer("🏅 Adminlar ro'yxati:\n\n" + "\n".join(lines))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_remove_list")
+async def admin_remove_list(callback: CallbackQuery):
+    data, status = await api_get("/api/bot/admins")
+    if status != 200 or not data:
+        await callback.message.answer("Hali adminlar yo'q.")
+        await callback.answer()
+        return
+    buttons = []
+    for a in data:
+        if a.get("is_founder"):
+            continue  # founder hech qachon ro'yxatda ko'rinmaydi - o'chirib bo'lmaydi
+        label = ROLE_LABELS.get(a["role"], a["role"])
+        buttons.append([InlineKeyboardButton(text=f"❌ {label} — {a['email']}", callback_data=f"rmadmin_{a['email']}")])
+    if not buttons:
+        await callback.message.answer("O'chirish mumkin bo'lgan admin yo'q.")
+        await callback.answer()
+        return
+    await callback.message.answer("Kimni olib tashlaymiz?", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("rmadmin_"))
+async def admin_remove_confirm(callback: CallbackQuery):
+    target_email = callback.data[len("rmadmin_"):]
+    data, status = await api_post("/api/bot/remove-admin", {
+        "by_telegram_id": callback.from_user.id,
+        "target_email": target_email,
+    })
+    if status == 200:
+        await callback.message.answer(f"✅ {target_email} olib tashlandi.")
+    else:
+        await callback.message.answer(f"❌ Xatolik: {data.get('error')}")
+    await callback.answer()
 
 
 # ===================== RENDER UCHUN HEALTH-CHECK SERVER =====================

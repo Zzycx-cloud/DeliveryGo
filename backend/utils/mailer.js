@@ -9,11 +9,16 @@ function getTransporter() {
     port: Number(process.env.SMTP_PORT || 465),
     secure: true,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    // Ulanishni ochiq saqlaymiz (pool) — shu sabab har bir kod uchun qaytadan
+    // handshake qilib o'tirmaydi, kod tezroq yetib boradi.
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 100,
     // Render ba'zan chiquvchi SMTP ulanishlarni sekinlashtiradi/bloklaydi —
     // shu sabab qisqa timeout qo'yamiz, aks holda so'rov cheksiz "osilib" qoladi
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 8000,
+    connectionTimeout: 6000,
+    greetingTimeout: 6000,
+    socketTimeout: 6000,
   });
   return transporter;
 }

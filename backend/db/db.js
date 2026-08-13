@@ -43,9 +43,19 @@ CREATE TABLE IF NOT EXISTS otp_codes (
 CREATE TABLE IF NOT EXISTS admins (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   email TEXT UNIQUE NOT NULL,
-  role TEXT DEFAULT 'admin', -- super_admin | admin | restaurant_admin
+  telegram_id TEXT,
+  role TEXT DEFAULT 'admin', -- owner | senior_admin (katta admin) | admin (oddiy admin) | restaurant_admin
   restaurant_id INTEGER,
+  is_founder INTEGER DEFAULT 0, -- bosh owner - hech kim (2-owner ham) o'chira olmaydi
   added_by TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS admin_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor TEXT NOT NULL,       -- kim bajardi (email yoki tg<id>)
+  action TEXT NOT NULL,      -- masalan: admin_qoshildi, admin_ochirildi, restoran_qoshildi, ban, shtraf
+  details TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -94,6 +104,16 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `);
 
+// Eski (oldin yaratilgan) baza fayllarida yangi ustunlar bo'lmasligi mumkin — xavfsiz migratsiya
+function ensureColumn(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+ensureColumn('admins', 'telegram_id', 'TEXT');
+ensureColumn('admins', 'is_founder', 'INTEGER DEFAULT 0');
+
 // Default settings
 const defaults = {
   plus_monthly_price: '29000',
@@ -103,12 +123,22 @@ const defaults = {
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
 for (const [k, v] of Object.entries(defaults)) insertSetting.run(k, v);
 
-// Ensure super admin from .env always exists
+// Bosh owner (founder) .env dan doim mavjud bo'lishi kerak — email orqali ham,
+// Telegram ID orqali ham kirganida owner huquqi berilishi uchun ikkalasi ham saqlanadi.
 const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'ibragimovfkhan@gmail.com';
-db.prepare(`
-  INSERT INTO admins (email, role, added_by)
-  SELECT ?, 'super_admin', 'system'
-  WHERE NOT EXISTS (SELECT 1 FROM admins WHERE email = ?)
-`).run(superAdminEmail, superAdminEmail);
+const superAdminTelegramId = process.env.SUPER_ADMIN_TELEGRAM_ID || '';
+
+const existingFounder = db.prepare('SELECT * FROM admins WHERE email = ?').get(superAdminEmail);
+if (!existingFounder) {
+  db.prepare(
+    'INSERT INTO admins (email, telegram_id, role, is_founder, added_by) VALUES (?, ?, ?, 1, ?)'
+  ).run(superAdminEmail, superAdminTelegramId || null, 'owner', 'system');
+} else {
+  // Har ehtimolga qarshi: .env dagi founder har doim owner + himoyalangan bo'lib qolsin,
+  // va agar telegram_id .env da yangilangan bo'lsa shu yerga ham yozib qo'yamiz.
+  db.prepare(
+    "UPDATE admins SET role = 'owner', is_founder = 1, telegram_id = COALESCE(NULLIF(?, ''), telegram_id) WHERE email = ?"
+  ).run(superAdminTelegramId, superAdminEmail);
+}
 
 module.exports = db;
