@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>DeliGo — tez yetkazib berish</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2224%22 fill=%22%23111214%22/><text x=%2250%22 y=%2268%22 font-size=%2260%22 font-family=%22Arial%22 font-weight=%22900%22 fill=%22%23C8FF4D%22 text-anchor=%22middle%22>G</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0E0F12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DeliGo">
+<link rel="apple-touch-icon" href="icon-192.svg">
+</head>
+<body>
+
+<!-- ===================== SPLASH ===================== -->
+<section id="screen-splash" class="screen active">
+  <div class="splash-wrap">
+    <div class="splash-letter" id="splashLetter">G</div>
+    <div class="splash-ring"></div>
+  </div>
+  <div class="splash-brand">Deli<span>Go</span></div>
+</section>
+
+<!-- ===================== LANGUAGE ===================== -->
+<section id="screen-lang" class="screen">
+  <div class="lang-hero">
+    <div class="lang-blob"></div>
+    <h1 data-i18n="chooseLang">Tilni tanlang</h1>
+    <p class="muted" data-i18n="chooseLangSub">Ilova tilini tanlab davom eting</p>
+  </div>
+  <div class="lang-list">
+    <button class="lang-btn" data-lang="uz"><span class="flag">🇺🇿</span> O‘zbek tili</button>
+    <button class="lang-btn" data-lang="ru"><span class="flag">🇷🇺</span> Русский язык</button>
+    <button class="lang-btn" data-lang="en"><span class="flag">🇬🇧</span> English</button>
+  </div>
+</section>
+
+<!-- ===================== AUTH: EMAIL ===================== -->
+<section id="screen-email" class="screen">
+  <div class="auth-card">
+    <div class="auth-icon">✉️</div>
+    <h1 data-i18n="loginTitle">Kirish</h1>
+    <p class="muted" data-i18n="loginSub">Elektron pochtangizni kiriting, tasdiqlash kodini yuboramiz</p>
+    <input type="email" id="emailInput" class="input" placeholder="email@example.com" autocomplete="email" />
+    <button class="btn-primary" id="sendCodeBtn" data-i18n="sendCode">Kodni yuborish</button>
+    <p class="err" id="emailErr"></p>
+  </div>
+</section>
+
+<!-- ===================== AUTH: CODE ===================== -->
+<section id="screen-code" class="screen">
+  <div class="auth-card">
+    <div class="auth-icon">🔐</div>
+    <h1 data-i18n="codeTitle">Kodni kiriting</h1>
+    <p class="muted"><span data-i18n="codeSub">Quyidagi manzilga yuborilgan 6 xonali kodni kiriting:</span> <b id="codeEmailLabel"></b></p>
+    <input type="text" id="codeInput" class="input code-input" maxlength="6" placeholder="000000" inputmode="numeric" />
+    <button class="btn-primary" id="verifyCodeBtn" data-i18n="verify">Tasdiqlash</button>
+    <p class="err" id="codeErr"></p>
+    <p class="hint" id="devCodeHint"></p>
+  </div>
+</section>
+
+<!-- ===================== MAIN APP (bottom nav) ===================== -->
+<section id="screen-main" class="screen">
+  <header class="topbar">
+    <div class="topbar-title">Deli<span>Go</span></div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="cartBtn">🛒<span class="badge" id="cartBadge" hidden>0</span></button>
+    </div>
+  </header>
+
+  <div class="tab-content" id="tab-home">
+    <div class="search-bar">
+      <input type="text" id="searchInput" class="input" placeholder="Restoran yoki oshxona qidirish..." />
+    </div>
+    <div class="filter-chips">
+      <button class="chip active" data-type="">Hammasi</button>
+      <button class="chip" data-type="restaurant">Restoranlar</button>
+      <button class="chip" data-type="oshxona">Oshxonalar</button>
+    </div>
+    <div class="plus-banner" id="plusBanner">
+      <div>
+        <div class="plus-title">DeliGo <b>Plyus</b></div>
+        <div class="plus-sub">Buyurtmalarga chegirma va tez yetkazib berish</div>
+      </div>
+      <button class="btn-small" id="plusBtn">Ulanish</button>
+    </div>
+    <div id="restaurantList" class="restaurant-list"></div>
+  </div>
+
+  <div class="tab-content hidden" id="tab-orders">
+    <h2 class="section-title">Buyurtmalarim</h2>
+    <div id="ordersList" class="orders-list"></div>
+  </div>
+
+  <div class="tab-content hidden" id="tab-profile">
+    <div class="profile-card">
+      <div class="profile-avatar">👤</div>
+      <div class="profile-email" id="profileEmail"></div>
+      <div class="profile-badges" id="profileBadges"></div>
+    </div>
+    <div class="settings-list">
+      <div class="settings-row" id="langRow">
+        <span>🌐 Til</span><span class="settings-value" id="currentLangLabel">O‘zbek</span>
+      </div>
+      <div class="settings-row" id="paymentRow">
+        <span>💳 To‘lov usuli</span><span class="settings-value" id="currentPaymentLabel">Naqd pul</span>
+      </div>
+      <div class="settings-row admin-only hidden" id="adminPanelRow">
+        <span>🛡 Admin panel</span><span class="settings-value">→</span>
+      </div>
+      <div class="settings-row" id="logoutRow">
+        <span style="color:#ff5c5c">🚪 Chiqish</span>
+      </div>
+    </div>
+  </div>
+
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-tab="home"><span class="nav-icon">🏠</span><b>Bosh sahifa</b></button>
+    <button class="nav-btn" data-tab="orders"><span class="nav-icon">📦</span><b>Buyurtmalar</b></button>
+    <button class="nav-btn" data-tab="profile"><span class="nav-icon">👤</span><b>Profil</b></button>
+  </nav>
+</section>
+
+<!-- ===================== RESTAURANT DETAIL ===================== -->
+<section id="screen-restaurant" class="screen">
+  <header class="topbar">
+    <button class="icon-btn" id="backFromRestaurant">←</button>
+    <div class="topbar-title" id="restaurantName">Restoran</div>
+    <div></div>
+  </header>
+  <div class="restaurant-detail">
+    <div class="restaurant-hero" id="restaurantHero"></div>
+    <div id="menuList" class="menu-list"></div>
+  </div>
+  <div class="cart-fab hidden" id="cartFab">
+    <span id="cartFabCount">0</span> ta mahsulot — <span id="cartFabTotal">0</span> so‘m
+  </div>
+</section>
+
+<!-- ===================== CHECKOUT ===================== -->
+<section id="screen-checkout" class="screen">
+  <header class="topbar">
+    <button class="icon-btn" id="backFromCheckout">←</button>
+    <div class="topbar-title">Buyurtmani rasmiylashtirish</div>
+    <div></div>
+  </header>
+  <div class="checkout-body">
+    <div class="checkout-block">
+      <h3>Savat</h3>
+      <div id="checkoutCartList"></div>
+    </div>
+    <div class="checkout-block">
+      <h3>Yetkazib berish manzili</h3>
+      <input type="text" id="addressInput" class="input" placeholder="Manzilni kiriting..." />
+    </div>
+    <div class="checkout-block">
+      <h3>To‘lov usuli</h3>
+      <div class="payment-options">
+        <button class="pay-opt active" data-pay="cash">💵 Naqd pul</button>
+        <button class="pay-opt" data-pay="card">💳 Karta</button>
+      </div>
+    </div>
+    <div class="checkout-total">
+      <span>Jami:</span><span id="checkoutTotal">0 so‘m</span>
+    </div>
+    <button class="btn-primary" id="placeOrderBtn">Buyurtma berish</button>
+  </div>
+</section>
+
+<!-- ===================== ORDER SUCCESS ===================== -->
+<section id="screen-success" class="screen">
+  <div class="success-wrap">
+    <div class="success-check">✓</div>
+    <h1>Buyurtma qabul qilindi!</h1>
+    <p class="muted">Restoran buyurtmangizni tayyorlashni boshladi. Holatni "Buyurtmalarim" bo‘limidan kuzatishingiz mumkin.</p>
+    <button class="btn-primary" id="successOkBtn">Tushunarli</button>
+  </div>
+</section>
+
+<!-- ===================== ADMIN PANEL ===================== -->
+<section id="screen-admin" class="screen">
+  <header class="topbar">
+    <button class="icon-btn" id="backFromAdmin">←</button>
+    <div class="topbar-title">Admin panel</div>
+    <div></div>
+  </header>
+  <div class="admin-tabs">
+    <button class="admin-tab-btn active" data-atab="stats">Statistika</button>
+    <button class="admin-tab-btn" data-atab="orders">Buyurtmalar</button>
+    <button class="admin-tab-btn" data-atab="restaurants">Restoranlar</button>
+    <button class="admin-tab-btn" data-atab="users">Foydalanuvchilar</button>
+    <button class="admin-tab-btn admin-super-only hidden" data-atab="admins">Adminlar</button>
+    <button class="admin-tab-btn admin-super-only hidden" data-atab="broadcast">Xabar yuborish</button>
+    <button class="admin-tab-btn admin-super-only hidden" data-atab="settings">Sozlamalar</button>
+  </div>
+
+  <div class="admin-tab-content" id="atab-stats">
+    <div class="stat-grid" id="statGrid"></div>
+  </div>
+
+  <div class="admin-tab-content hidden" id="atab-orders">
+    <div id="adminOrdersList"></div>
+  </div>
+
+  <div class="admin-tab-content hidden" id="atab-restaurants">
+    <button class="btn-small" id="addRestaurantBtn">+ Restoran/Oshxona qo‘shish</button>
+    <div id="adminRestaurantsList"></div>
+  </div>
+
+  <div class="admin-tab-content hidden" id="atab-users">
+    <div id="adminUsersList"></div>
+  </div>
+
+  <div class="admin-tab-content hidden" id="atab-admins">
+    <button class="btn-small" id="addAdminBtn">+ Admin qo‘shish</button>
+    <div id="adminAdminsList"></div>
+  </div>
+
+  <div class="admin-tab-content hidden" id="atab-broadcast">
+    <p class="muted" style="margin-bottom:10px;">Barcha foydalanuvchilarga bir vaqtda xabar yuborish (email + Telegram bot + kanal)</p>
+    <textarea id="broadcastText" rows="6" placeholder="Xabar matnini kiriting..." style="width:100%;padding:12px;border-radius:12px;background:#1a1b1e;color:#fff;border:1px solid #333;resize:vertical;"></textarea>
+    <div style="display:flex;gap:14px;margin:12px 0;flex-wrap:wrap;">
+      <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="bcEmail" checked> Email</label>
+      <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="bcTelegram" checked> Telegram bot foydalanuvchilari</label>
+      <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="bcChannel"> Kanalga e'lon</label>
+    </div>
+    <button class="btn-primary" id="sendBroadcastBtn">Yuborish</button>
+    <div id="broadcastResult" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="admin-tab-content hidden" id="atab-settings">
+    <div class="settings-form" id="settingsForm"></div>
+    <button class="btn-primary" id="saveSettingsBtn">Saqlash</button>
+  </div>
+</section>
+
+<!-- ===================== MODAL ===================== -->
+<div id="modalOverlay" class="modal-overlay hidden">
+  <div class="modal-box" id="modalBox"></div>
+</div>
+
+<script src="app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
