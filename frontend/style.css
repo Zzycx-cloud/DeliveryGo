@@ -309,29 +309,56 @@ h1, h2, h3 { font-family: var(--font-display); margin: 0; }
   position: fixed; bottom: max(14px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
   width: calc(100% - 32px); max-width: 448px;
   display: flex;
-  background: var(--glass);
-  backdrop-filter: saturate(180%) blur(24px);
-  -webkit-backdrop-filter: saturate(180%) blur(24px);
-  border: 1px solid rgba(255,255,255,.06);
+  align-items: center;
+  background: linear-gradient(180deg, rgba(40,42,48,.78), rgba(20,21,24,.68));
+  backdrop-filter: saturate(200%) blur(36px);
+  -webkit-backdrop-filter: saturate(200%) blur(36px);
+  border: 1px solid rgba(255,255,255,.09);
   border-radius: var(--radius-pill);
-  padding: 8px;
-  gap: 4px;
+  padding: 6px;
+  gap: 2px;
   z-index: 10;
-  box-shadow: var(--shadow-soft);
+  box-shadow: 0 12px 32px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.08);
+  position: fixed;
+  isolation: isolate;
+}
+.bottom-nav::before {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,0) 40%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  pointer-events: none;
 }
 .nav-btn {
   flex: 1;
   background: none; border: none; color: var(--muted);
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  font-size: 11px; font-weight: 700;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  font-size: 10.5px; font-weight: 700;
   cursor: pointer;
-  padding: 8px 4px;
+  padding: 6px 4px 8px;
   border-radius: var(--radius-pill);
-  transition: transform .18s var(--spring), background .2s var(--ease), color .2s var(--ease);
+  transition: color .25s var(--ease);
 }
-.nav-btn span { font-size: 18px; }
-.nav-btn.active { color: #0E0F12; background: var(--accent); }
-.nav-btn:active { transform: scale(.92); }
+.nav-btn b { font-weight: 700; transition: color .25s var(--ease), transform .25s var(--spring); }
+.nav-icon {
+  font-size: 18px;
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: transparent;
+  transition: background .3s var(--spring), transform .3s var(--spring), box-shadow .3s var(--ease);
+}
+.nav-btn.active .nav-icon {
+  background: var(--accent);
+  color: #0E0F12;
+  transform: scale(1.06);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.nav-btn.active b { color: var(--accent); }
+.nav-btn:active .nav-icon { transform: scale(.86); }
 
 /* ============ RESTAURANT DETAIL ============ */
 .restaurant-detail { padding-bottom: 100px; }

@@ -1,7 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const db = require('../db/db');
-const { logRegistration } = require('../telegram');
+const { logRegistration, logEvent } = require('../telegram');
 const { isRealSmtpConfigured, sendMailWithTimeout } = require('../utils/mailer');
 
 const router = express.Router();
@@ -41,9 +41,13 @@ router.post('/request-code', async (req, res) => {
         subject: 'DeliGo - Tasdiqlash kodi',
         text: `Sizning DeliGo tasdiqlash kodingiz: ${code} (5 daqiqa amal qiladi)`,
       });
+      console.log(`[SMTP OK] ${email} ga kod yuborildi`);
     } catch (err) {
-      console.error(`Email yuborishda xato (${email}):`, err.message);
-      console.log(`[DEV FALLBACK] ${email} uchun kod: ${code}`);
+      // Xatoni to'liq chiqaramiz (server console) + owner'ga Telegram log kanaliga ham yuboramiz,
+      // shunda serverga kirmasdan ham nima uchun kod yetib bormayotganini ko'rish mumkin.
+      const detail = [err.message, err.code, err.command, err.response].filter(Boolean).join(' | ');
+      console.error(`[SMTP XATO] ${email} ga kod yuborilmadi:`, detail);
+      logEvent(`⚠️ <b>SMTP xato</b> — ${email} ga kod yuborilmadi\n${detail}`);
     }
   } else {
     console.log(`[DEV] ${email} uchun kod: ${code}`);

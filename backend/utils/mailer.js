@@ -4,21 +4,24 @@ let transporter = null;
 function getTransporter() {
   if (transporter) return transporter;
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
+  const port = Number(process.env.SMTP_PORT || 465);
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 465),
-    secure: true,
+    port,
+    // 465 = implicit TLS (secure:true). 587 = STARTTLS (secure:false, requireTLS:true).
+    // Portga qarab avtomatik tanlanadi — noto'g'ri kombinatsiya (masalan 587+secure:true)
+    // Gmail bilan "Greeting never received" / ulanish uzilishi xatosiga olib keladi.
+    secure: port === 465,
+    requireTLS: port !== 465,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    // Ulanishni ochiq saqlaymiz (pool) — shu sabab har bir kod uchun qaytadan
-    // handshake qilib o'tirmaydi, kod tezroq yetib boradi.
     pool: true,
     maxConnections: 3,
     maxMessages: 100,
-    // Render ba'zan chiquvchi SMTP ulanishlarni sekinlashtiradi/bloklaydi —
-    // shu sabab qisqa timeout qo'yamiz, aks holda so'rov cheksiz "osilib" qoladi
-    connectionTimeout: 6000,
-    greetingTimeout: 6000,
-    socketTimeout: 6000,
+    connectionTimeout: 12000,
+    greetingTimeout: 12000,
+    socketTimeout: 12000,
+    logger: process.env.SMTP_DEBUG === '1',
+    debug: process.env.SMTP_DEBUG === '1',
   });
   return transporter;
 }
@@ -27,7 +30,7 @@ function isRealSmtpConfigured() {
   return !!(process.env.SMTP_USER && !process.env.SMTP_USER.includes('your_email') && process.env.SMTP_PASS);
 }
 
-function sendMailWithTimeout(options, ms = 9000) {
+function sendMailWithTimeout(options, ms = 12000) {
   const mailer = getTransporter();
   if (!mailer) return Promise.reject(new Error('SMTP sozlanmagan'));
   return Promise.race([
