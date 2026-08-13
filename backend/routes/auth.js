@@ -21,6 +21,10 @@ router.post('/request-code', async (req, res) => {
   const code = generateCode();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
+  // Shu email uchun avval yuborilgan, hali ishlatilmagan eski kodlarni bekor qilamiz —
+  // shunda faqat oxirgi yuborilgan kod ishlaydi, eskisi bilan tasdiqlab bo'lmaydi.
+  db.prepare('DELETE FROM otp_codes WHERE email = ? AND used = 0').run(email);
+
   db.prepare('INSERT INTO otp_codes (email, code, expires_at) VALUES (?, ?, ?)').run(email, code, expiresAt);
 
   // Frontend'ga DARHOL javob qaytaramiz (SMTP javobini kutmaymiz) —

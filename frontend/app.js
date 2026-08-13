@@ -46,6 +46,18 @@ function applyI18n() {
   });
 }
 
+const LANG_STORAGE_KEY = 'deligo_lang';
+const LANG_LABELS = { uz: 'O‘zbek', ru: 'Русский', en: 'English' };
+
+function setLang(lang) {
+  if (!I18N[lang]) return;
+  state.lang = lang;
+  localStorage.setItem(LANG_STORAGE_KEY, lang);
+  applyI18n();
+  const labelEl = document.getElementById('currentLangLabel');
+  if (labelEl) labelEl.textContent = LANG_LABELS[lang] || LANG_LABELS.uz;
+}
+
 // ===================== SCREEN NAV =====================
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
@@ -64,13 +76,46 @@ async function api(path, options = {}) {
 
 // ===================== SPLASH -> LANG =====================
 window.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => showScreen('screen-lang'), 1900);
+  // Til avval tanlangan bo'lsa (shu qurilma/brauzerda), tilni qayta so'ramaymiz —
+  // to'g'ridan-to'g'ri login ekraniga o'tamiz, o'sha tanlangan tilda.
+  const savedLang = localStorage.getItem(LANG_STORAGE_KEY);
+  if (savedLang && I18N[savedLang]) {
+    setLang(savedLang);
+    setTimeout(() => showScreen('screen-email'), 1900);
+  } else {
+    setTimeout(() => showScreen('screen-lang'), 1900);
+  }
 
   document.querySelectorAll('.lang-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.lang = btn.dataset.lang;
-      applyI18n();
+      setLang(btn.dataset.lang);
       showScreen('screen-email');
+    });
+  });
+
+  // Kodni kiriting ekranidan — email noto'g'ri kiritilgan bo'lsa, orqaga qaytib tahrirlash
+  document.getElementById('editEmailBtn').addEventListener('click', () => {
+    document.getElementById('emailInput').value = state.email || '';
+    document.getElementById('codeInput').value = '';
+    document.getElementById('codeErr').textContent = '';
+    showScreen('screen-email');
+  });
+
+  // PROFIL — tilni o'zgartirish
+  document.getElementById('langRow').addEventListener('click', () => {
+    showModal(`
+      <h3>🌐 Tilni tanlang</h3>
+      <div class="lang-list">
+        <button type="button" class="lang-btn" data-modal-lang="uz"><span class="flag">UZ</span> O‘zbek tili</button>
+        <button type="button" class="lang-btn" data-modal-lang="ru"><span class="flag">RU</span> Русский язык</button>
+        <button type="button" class="lang-btn" data-modal-lang="en"><span class="flag">EN</span> English</button>
+      </div>
+    `);
+    document.querySelectorAll('#modalBox [data-modal-lang]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        setLang(btn.dataset.modalLang);
+        closeModal();
+      });
     });
   });
 

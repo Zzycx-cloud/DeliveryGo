@@ -70,6 +70,9 @@ function getTransporter() {
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port,
+    // 465 = implicit TLS (secure:true). 587 = STARTTLS (secure:false, requireTLS:true).
+    // Portga qarab avtomatik tanlanadi — noto'g'ri kombinatsiya (masalan 587+secure:true)
+    // Gmail bilan "Greeting never received" / ulanish uzilishi xatosiga olib keladi.
     secure: port === 465,
     requireTLS: port !== 465,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },

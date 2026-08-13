@@ -32,6 +32,27 @@ function checkBotSecret(req, res, next) {
 }
 router.use(checkBotSecret);
 
+// Telegram foydalanuvchisi avval ro'yxatdan o'tganmi — tekshirish uchun (YANGI YOZUV YARATMAYDI).
+// Bot /start bosilganda shu orqali tilni/telefon raqamini qayta so'ramaslik uchun ishlatiladi.
+router.get('/user/:telegram_id', (req, res) => {
+  const telegramId = req.params.telegram_id;
+  const email = `tg${telegramId}@deligo.bot`;
+  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  if (!user) return res.status(404).json({ error: 'Topilmadi' });
+
+  const admin = findAdminByTelegramId(telegramId);
+  const isSuperAdminByPhone = !!(user.phone && FOUNDERS.some((f) => f.phone && user.phone.replace(/\D/g, '').endsWith(f.phone.replace(/\D/g, '').slice(-9))));
+
+  res.json({
+    ok: true,
+    user,
+    isBanned: !!user.is_banned,
+    banReason: user.ban_reason,
+    isAdmin: !!admin || isSuperAdminByPhone,
+    adminRole: admin ? admin.role : (isSuperAdminByPhone ? 'owner' : null),
+  });
+});
+
 // Telegram foydalanuvchisini ro'yxatdan o'tkazish / topish (telegram_id orqali)
 router.post('/register', (req, res) => {
   const { telegram_id, phone, language } = req.body;

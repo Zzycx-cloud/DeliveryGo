@@ -179,6 +179,8 @@ h1, h2, h3 { font-family: var(--font-display); margin: 0; }
 .btn-primary:active { transform: scale(.96); box-shadow: 0 2px 8px rgba(255,255,255,.10); }
 .err { color: var(--coral); font-size: 13px; min-height: 16px; }
 .hint { color: var(--muted); font-size: 12px; }
+.edit-email-btn { background: none; border: none; cursor: pointer; font-size: 14px; padding: 0 2px; vertical-align: middle; opacity: .8; }
+.edit-email-btn:hover { opacity: 1; }
 
 /* ============ MAIN APP ============ */
 #screen-main { background: var(--bg); }

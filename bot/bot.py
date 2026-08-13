@@ -142,6 +142,27 @@ pending_menu_item = {}
 # ===================== START =====================
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
+    await state.clear()
+    uid = message.from_user.id
+
+    # Foydalanuvchi avval ro'yxatdan o'tgan (til tanlagan va raqamini ulashgan) bo'lsa,
+    # tilni va telefon raqamini qayta so'ramaymiz — to'g'ridan-to'g'ri asosiy menyuga o'tkazamiz.
+    data, status = await api_get(f"/api/bot/user/{uid}")
+    if status == 200 and data.get("user") and data["user"].get("phone"):
+        user = data["user"]
+        user_lang[uid] = user.get("language") or "uz"
+        user_admin_role[uid] = data.get("adminRole")
+
+        if data.get("isBanned"):
+            await message.answer(
+                t(uid, "banned", reason=data.get("banReason") or "-"),
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            return
+
+        await show_main_menu(message, is_admin=data.get("isAdmin"))
+        return
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🇺🇿 O'zbek", callback_data="lang_uz")],
         [InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru")],
