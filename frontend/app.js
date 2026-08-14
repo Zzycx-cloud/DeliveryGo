@@ -333,6 +333,7 @@ async function openRestaurant(id) {
         <div>
           <div class="menu-item-name">${escapeHtml(item.name)}</div>
           <div class="menu-item-desc">${escapeHtml(item.description || '')}</div>
+          ${item.category ? `<div class="menu-item-category muted" style="font-size:11px">${escapeHtml(item.category)}</div>` : ''}
           <div class="menu-item-price">${item.price.toLocaleString()} so'm</div>
         </div>
         <div class="qty-control">
@@ -503,8 +504,8 @@ async function loadAdminRestaurants() {
         <div class="admin-row-title">${escapeHtml(r.name)}</div>
         <div class="admin-row-sub">${r.type === 'oshxona' ? 'Oshxona' : 'Restoran'} • Komissiya: ${r.commission_percent}%</div>
       </div>
-      <button class="mini-btn accent">+ Taom</button>`;
-    el.querySelector('button').addEventListener('click', () => openAddMenuItemModal(r));
+      <button class="mini-btn accent">⚙️ Boshqarish</button>`;
+    el.querySelector('button').addEventListener('click', () => openManageRestaurantModal(r));
     list.appendChild(el);
   });
 }
@@ -662,12 +663,66 @@ function openAddRestaurantModal() {
 }
 
 function openAddMenuItemModal(restaurant) {
+  openManageRestaurantModal(restaurant);
+}
+
+// Restoranni to'liq boshqarish oynasi: ma'lumotlarini tahrirlash + taomlar ro'yxati
+// (qo'shish, tahrirlash, o'chirish, mavjud/mavjud emas qilish).
+function openManageRestaurantModal(restaurant) {
   showModal(`
-    <h3>${escapeHtml(restaurant.name)} — Taom qo'shish</h3>
-    <input class="input" id="mi_name" placeholder="Taom nomi">
-    <input class="input" id="mi_desc" placeholder="Tavsif">
-    <input class="input" id="mi_price" placeholder="Narxi (so'm)">
-    <button class="btn-primary" id="mi_submit">Qo'shish</button>`);
+    <h3>${escapeHtml(restaurant.name)}</h3>
+    <div class="settings-group" style="margin-bottom:12px">
+      <input class="input" id="mr_name" placeholder="Nomi" value="${escapeHtml(restaurant.name)}">
+      <select class="input" id="mr_type">
+        <option value="restaurant" ${restaurant.type === 'restaurant' ? 'selected' : ''}>Restoran</option>
+        <option value="oshxona" ${restaurant.type === 'oshxona' ? 'selected' : ''}>Oshxona</option>
+      </select>
+      <input class="input" id="mr_address" placeholder="Manzil" value="${escapeHtml(restaurant.address || '')}">
+      <input class="input" id="mr_phone" placeholder="Telefon" value="${escapeHtml(restaurant.phone || '')}">
+      <input class="input" id="mr_commission" placeholder="Komissiya %" value="${restaurant.commission_percent}">
+      <input class="input" id="mr_image" placeholder="Rasm URL (https://...)" value="${escapeHtml(restaurant.image_url || '')}">
+      <button class="btn-primary" id="mr_save">Ma'lumotlarni saqlash</button>
+      <button class="mini-btn danger" id="mr_delete" style="margin-top:8px">Restoranni o'chirish</button>
+    </div>
+    <h3 style="font-size:15px">🍽 Taomlar</h3>
+    <div id="mi_list" class="admin-rows-mini"></div>
+    <div class="settings-group" style="margin-top:10px">
+      <input class="input" id="mi_name" placeholder="Taom nomi">
+      <input class="input" id="mi_desc" placeholder="Tavsif">
+      <input class="input" id="mi_price" placeholder="Narxi (so'm)">
+      <input class="input" id="mi_category" placeholder="Kategoriya (masalan: Birinchi taom, Ichimlik)">
+      <input class="input" id="mi_image" placeholder="Rasm URL (https://...)">
+      <button class="btn-primary" id="mi_submit">+ Taom qo'shish</button>
+    </div>
+  `);
+
+  document.getElementById('mr_save').addEventListener('click', async () => {
+    try {
+      await api(`/api/restaurants/${restaurant.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: document.getElementById('mr_name').value,
+          type: document.getElementById('mr_type').value,
+          address: document.getElementById('mr_address').value,
+          phone: document.getElementById('mr_phone').value,
+          commission_percent: Number(document.getElementById('mr_commission').value || restaurant.commission_percent),
+          image_url: document.getElementById('mr_image').value,
+        }),
+      });
+      loadAdminRestaurants();
+      closeModal();
+    } catch (err) { alert(err.message); }
+  });
+
+  document.getElementById('mr_delete').addEventListener('click', async () => {
+    if (!confirm('Rostdan ham bu restoranni o\'chirmoqchimisiz?')) return;
+    try {
+      await api(`/api/restaurants/${restaurant.id}`, { method: 'DELETE' });
+      loadAdminRestaurants();
+      closeModal();
+    } catch (err) { alert(err.message); }
+  });
+
   document.getElementById('mi_submit').addEventListener('click', async () => {
     try {
       await api(`/api/restaurants/${restaurant.id}/menu`, {
@@ -676,9 +731,83 @@ function openAddMenuItemModal(restaurant) {
           name: document.getElementById('mi_name').value,
           description: document.getElementById('mi_desc').value,
           price: Number(document.getElementById('mi_price').value || 0),
+          category: document.getElementById('mi_category').value,
+          image_url: document.getElementById('mi_image').value,
         }),
       });
-      closeModal();
+      document.getElementById('mi_name').value = '';
+      document.getElementById('mi_desc').value = '';
+      document.getElementById('mi_price').value = '';
+      document.getElementById('mi_category').value = '';
+      document.getElementById('mi_image').value = '';
+      loadMenuItemsInModal(restaurant);
+    } catch (err) { alert(err.message); }
+  });
+
+  loadMenuItemsInModal(restaurant);
+}
+
+async function loadMenuItemsInModal(restaurant) {
+  const list = document.getElementById('mi_list');
+  if (!list) return;
+  list.innerHTML = '<p class="muted">Yuklanmoqda...</p>';
+  try {
+    const items = await api(`/api/restaurants/${restaurant.id}/menu-admin`);
+    list.innerHTML = '';
+    if (!items.length) {
+      list.innerHTML = '<p class="muted">Hali taom yo\'q</p>';
+      return;
+    }
+    items.forEach((it) => {
+      const row = document.createElement('div');
+      row.className = 'admin-row';
+      row.innerHTML = `
+        <div class="admin-row-info">
+          <div class="admin-row-title">${escapeHtml(it.name)}${it.is_available ? '' : ' <span class="muted">(mavjud emas)</span>'}</div>
+          <div class="admin-row-sub">${it.price.toLocaleString()} so'm${it.category ? ' • ' + escapeHtml(it.category) : ''}</div>
+        </div>
+        <button class="mini-btn" data-act="toggle">${it.is_available ? 'Yashirish' : 'Ko\'rsatish'}</button>
+        <button class="mini-btn" data-act="edit">✏️</button>
+        <button class="mini-btn danger" data-act="del">🗑</button>`;
+      row.querySelector('[data-act="toggle"]').addEventListener('click', async () => {
+        await api(`/api/restaurants/${restaurant.id}/menu/${it.id}`, { method: 'PATCH', body: JSON.stringify({ is_available: !it.is_available }) });
+        loadMenuItemsInModal(restaurant);
+      });
+      row.querySelector('[data-act="del"]').addEventListener('click', async () => {
+        if (!confirm(`"${it.name}" o'chirilsinmi?`)) return;
+        await api(`/api/restaurants/${restaurant.id}/menu/${it.id}`, { method: 'DELETE' });
+        loadMenuItemsInModal(restaurant);
+      });
+      row.querySelector('[data-act="edit"]').addEventListener('click', () => openEditMenuItemModal(restaurant, it));
+      list.appendChild(row);
+    });
+  } catch (err) {
+    list.innerHTML = `<p class="err">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function openEditMenuItemModal(restaurant, item) {
+  showModal(`
+    <h3>Taomni tahrirlash</h3>
+    <input class="input" id="emi_name" placeholder="Taom nomi" value="${escapeHtml(item.name)}">
+    <input class="input" id="emi_desc" placeholder="Tavsif" value="${escapeHtml(item.description || '')}">
+    <input class="input" id="emi_price" placeholder="Narxi (so'm)" value="${item.price}">
+    <input class="input" id="emi_category" placeholder="Kategoriya" value="${escapeHtml(item.category || '')}">
+    <input class="input" id="emi_image" placeholder="Rasm URL" value="${escapeHtml(item.image_url || '')}">
+    <button class="btn-primary" id="emi_save">Saqlash</button>`);
+  document.getElementById('emi_save').addEventListener('click', async () => {
+    try {
+      await api(`/api/restaurants/${restaurant.id}/menu/${item.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: document.getElementById('emi_name').value,
+          description: document.getElementById('emi_desc').value,
+          price: Number(document.getElementById('emi_price').value || item.price),
+          category: document.getElementById('emi_category').value,
+          image_url: document.getElementById('emi_image').value,
+        }),
+      });
+      openManageRestaurantModal(restaurant);
     } catch (err) { alert(err.message); }
   });
 }

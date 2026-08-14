@@ -126,6 +126,7 @@ ensureColumn('admins', 'is_founder', 'INTEGER DEFAULT 0');
 ensureColumn('orders', 'courier_id', 'INTEGER');
 ensureColumn('orders', 'courier_telegram_id', 'TEXT');
 ensureColumn('orders', 'courier_name', 'TEXT');
+ensureColumn('menu_items', 'category', 'TEXT');
 
 // Default settings
 const defaults = {
